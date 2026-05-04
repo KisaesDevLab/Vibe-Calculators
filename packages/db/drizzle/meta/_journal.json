@@ -8,6 +8,27 @@
       "when": 1777911559886,
       "tag": "0000_initial",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1777920430269,
+      "tag": "0001_auth_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777921026178,
+      "tag": "0002_recovery_codes",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1777921402621,
+      "tag": "0003_auth_events",
+      "breakpoints": true
     }
   ]
 }
