@@ -12,3 +12,7 @@ import "./calculators/section-179.js";
 import "./calculators/bonus-168k.js";
 import "./calculators/depreciation-waterfall.js";
 import "./calculators/cost-segregation.js";
+import "./calculators/rmd.js";
+import "./calculators/roth-conversion.js";
+import "./calculators/capital-gains.js";
+import "./calculators/qbi.js";
