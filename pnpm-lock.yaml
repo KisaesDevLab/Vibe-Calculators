@@ -149,7 +149,11 @@ importers:
         specifier: 2.1.4
         version: 2.1.4(@types/node@20.14.10)(jsdom@25.0.1)
 
-  packages/calc-engine: {}
+  packages/calc-engine:
+    devDependencies:
+      vitest:
+        specifier: 2.1.4
+        version: 2.1.4(@types/node@20.14.10)(jsdom@25.0.1)
 
   packages/db:
     dependencies:
@@ -173,11 +177,23 @@ importers:
         specifier: 2.1.4
         version: 2.1.4(@types/node@20.14.10)(jsdom@25.0.1)
 
-  packages/pdf: {}
+  packages/pdf:
+    devDependencies:
+      vitest:
+        specifier: 2.1.4
+        version: 2.1.4(@types/node@20.14.10)(jsdom@25.0.1)
 
-  packages/shared-types: {}
+  packages/shared-types:
+    devDependencies:
+      vitest:
+        specifier: 2.1.4
+        version: 2.1.4(@types/node@20.14.10)(jsdom@25.0.1)
 
-  packages/tax-engine: {}
+  packages/tax-engine:
+    devDependencies:
+      vitest:
+        specifier: 2.1.4
+        version: 2.1.4(@types/node@20.14.10)(jsdom@25.0.1)
 
 packages:
 
