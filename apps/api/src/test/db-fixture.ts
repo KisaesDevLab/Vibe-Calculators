@@ -1,26 +1,29 @@
 /**
- * Integration test fixture — spins up an in-memory Postgres via
- * pglite (embedded WASM build), applies every Drizzle migration in
- * packages/db/drizzle/, and yields a Drizzle client bound to it.
+ * Integration test fixture — spins up a real Postgres 16 via
+ * testcontainers (one container per test file in beforeAll), runs
+ * the committed Drizzle migrations from packages/db/drizzle/, and
+ * yields a Drizzle client bound to it.
  *
- * Each test gets its own pglite instance so there's no cross-test
- * leakage. pglite is fast enough (~50ms boot + per-query overhead
- * comparable to a real Postgres) to make this practical for unit-
- * test-style integration coverage.
+ * Why testcontainers (not pglite): the production target is
+ * Postgres 16 running on the appliance host. pglite was great for
+ * speed but isn't byte-identical; constraints behave subtly
+ * differently and we caught real shape drift twice in Phase 3. A
+ * real postgres:16-alpine eliminates that whole class of false
+ * positives/negatives.
  *
- * Type aliasing note: Drizzle's pglite Database type and the
- * NodePgDatabase type from @vibe-calc/db diverge on internal
- * generics (different transitive drizzle-orm paths under pnpm). The
- * fixture exposes the test db typed as the production `Database`
- * via an unknown-cast at the boundary — this keeps every consumer
- * happy without leaking a separate test type into route code.
+ * Speed: container start ~3-6s on the host's Docker, plus the
+ * migration apply ~200ms. Tests within a file share the container
+ * via beforeAll/afterAll. Per-test isolation is provided by
+ * `truncateAll(db)` rather than respawning the container.
  */
 
-import { PGlite } from "@electric-sql/pglite";
-import { drizzle } from "drizzle-orm/pglite";
-import { readdirSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import pg from "pg";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { sql } from "drizzle-orm";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readdirSync, readFileSync } from "node:fs";
 import type { Database } from "@vibe-calc/db";
 import { schema } from "@vibe-calc/db";
 
@@ -29,44 +32,91 @@ export type TestDb = Database;
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = resolve(HERE, "..", "..", "..", "..", "packages", "db", "drizzle");
 
-function loadOrderedMigrations(): { name: string; sql: string }[] {
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith(".sql"))
-    .sort();
-  return files.map((name) => ({
-    name,
-    sql: readFileSync(join(MIGRATIONS_DIR, name), "utf8"),
-  }));
+export interface TestHarness {
+  db: TestDb;
+  pool: pg.Pool;
+  container: StartedPostgreSqlContainer;
+  /** Empties every domain table; auth tables; tags. Keeps schema. */
+  truncateAll: () => Promise<void>;
+  close: () => Promise<void>;
 }
 
-/**
- * Creates a fresh in-memory Postgres + applies every committed
- * migration. The returned `close()` releases the pglite instance.
- */
-export async function makeTestDb(): Promise<{ db: TestDb; close: () => Promise<void> }> {
-  const pg = new PGlite();
-  await pg.waitReady;
+function loadOrderedMigrations(): { name: string; sql: string }[] {
+  return readdirSync(MIGRATIONS_DIR)
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+    .map((name) => ({
+      name,
+      sql: readFileSync(resolve(MIGRATIONS_DIR, name), "utf8"),
+    }));
+}
 
+const TABLES_TO_TRUNCATE = [
+  "auth_events",
+  "magic_link_tokens",
+  "password_reset_tokens",
+  "recovery_codes",
+  "sessions",
+  "calculation_versions",
+  "calculations",
+  "engagements",
+  "entity_tags",
+  "tags",
+  "clients",
+  "users",
+] as const;
+
+export async function makeTestDb(): Promise<TestHarness> {
+  const container = await new PostgreSqlContainer("postgres:16-alpine")
+    .withDatabase("vibe_test")
+    .withUsername("test")
+    .withPassword("test")
+    // Speed: limit fsync etc for ephemeral test data.
+    .withCommand([
+      "postgres",
+      "-c",
+      "fsync=off",
+      "-c",
+      "synchronous_commit=off",
+      "-c",
+      "full_page_writes=off",
+    ])
+    .start();
+
+  const pool = new pg.Pool({
+    connectionString: container.getConnectionUri(),
+    max: 5,
+  });
+  const db = drizzle(pool, { schema }) as unknown as TestDb;
+
+  // Apply migrations in order. We don't use drizzle/migrator because
+  // a couple of our migrations (0005 specifically) are hand-written
+  // ALTERs that the migrator's tracking table would still mark applied
+  // — but executing manually keeps semantics identical to what
+  // packages/db/migrate.ts does in production (minus the _meta row,
+  // which tests don't need).
   for (const m of loadOrderedMigrations()) {
     const statements = m.sql
       .split("--> statement-breakpoint")
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
     for (const s of statements) {
-      await pg.exec(s);
+      await pool.query(s);
     }
   }
 
-  const drizzleClient = drizzle(pg, { schema });
-  // Identical for query purposes; the type drift is purely in
-  // generic-parameter resolution under pnpm's nested drizzle-orm
-  // resolution. Tests issue ordinary Drizzle calls; nothing reaches
-  // into pglite-specific APIs through this seam.
-  const db = drizzleClient as unknown as TestDb;
   return {
     db,
-    close: async () => {
-      await pg.close();
+    pool,
+    container,
+    async truncateAll() {
+      // CASCADE handles FK ordering; identity restart resets sequences.
+      const list = TABLES_TO_TRUNCATE.map((t) => `"${t}"`).join(", ");
+      await db.execute(sql.raw(`TRUNCATE TABLE ${list} RESTART IDENTITY CASCADE`));
+    },
+    async close() {
+      await pool.end();
+      await container.stop();
     },
   };
 }

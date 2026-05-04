@@ -1,11 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
 import { randomBytes } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { recoveryCodes, sessions, users } from "@vibe-calc/db";
 import { TOTP, Secret } from "otpauth";
-import { makeTestDb, type TestDb } from "./db-fixture.js";
+import { makeTestDb, type TestDb, type TestHarness } from "./db-fixture.js";
 import { createApp } from "../server.js";
 import { hashPassword } from "../lib/password.js";
 import { createBootstrapManager } from "../lib/bootstrap.js";
@@ -29,16 +29,14 @@ import { SESSION_COOKIE_NAME } from "../lib/cookies.js";
  *   - rate-limit lockout after 5 failed logins
  */
 
-interface Harness {
+interface AppHarness {
   db: TestDb;
-  close: () => Promise<void>;
   app: Express;
   capturedMagicLinks: { email: string; token: string }[];
   bootstrap: ReturnType<typeof createBootstrapManager>;
 }
 
-async function buildHarness(): Promise<Harness> {
-  const { db, close } = await makeTestDb();
+function buildAppHarness(db: TestDb): AppHarness {
   const captured: { email: string; token: string }[] = [];
   const kms = createKms(randomBytes(32).toString("base64"));
   const totpSealer = sealerFrom(kms);
@@ -61,7 +59,7 @@ async function buildHarness(): Promise<Harness> {
       },
     },
   });
-  return { db, close, app, capturedMagicLinks: captured, bootstrap };
+  return { db, app, capturedMagicLinks: captured, bootstrap };
 }
 
 async function seedUser(
@@ -92,12 +90,19 @@ async function loginCookie(db: TestDb, userId: string): Promise<string> {
 }
 
 describe("auth flows — integration", () => {
-  let h: Harness;
-  beforeEach(async () => {
-    h = await buildHarness();
+  let harness: TestHarness;
+  let h: AppHarness;
+
+  beforeAll(async () => {
+    harness = await makeTestDb();
+  }, 60_000);
+  afterAll(async () => {
+    await harness.close();
   });
-  afterEach(async () => {
-    await h.close();
+
+  beforeEach(async () => {
+    await harness.truncateAll();
+    h = buildAppHarness(harness.db);
   });
 
   // ----- Build-plan headline scenario --------------------------------

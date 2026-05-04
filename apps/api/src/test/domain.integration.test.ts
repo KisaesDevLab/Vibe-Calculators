@@ -1,7 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { clients, engagements, calculations, notArchived, entityTags, tags } from "@vibe-calc/db";
-import { makeTestDb, type TestDb } from "./db-fixture.js";
+import { makeTestDb, type TestDb, type TestHarness } from "./db-fixture.js";
 
 /**
  * Phase 3 acceptance — Drizzle types compile cleanly (this file
@@ -11,14 +11,19 @@ import { makeTestDb, type TestDb } from "./db-fixture.js";
  */
 
 describe("domain schema — integration", () => {
+  let harness: TestHarness;
   let db: TestDb;
-  let close: () => Promise<void>;
+
+  beforeAll(async () => {
+    harness = await makeTestDb();
+    db = harness.db;
+  }, 60_000);
+  afterAll(async () => {
+    await harness.close();
+  });
 
   beforeEach(async () => {
-    ({ db, close } = await makeTestDb());
-  });
-  afterEach(async () => {
-    await close();
+    await harness.truncateAll();
   });
 
   it("inserts a client with valid EIN; rejects bad EIN format", async () => {
