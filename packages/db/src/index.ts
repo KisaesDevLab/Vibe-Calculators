@@ -5,6 +5,7 @@ export * from "./connection";
 
 // Soft-delete helpers.
 export * from "./soft-delete";
+export * from "./tax-table-resolver";
 
 // Every table + its inferred Row / NewRow types.
 export * from "./schema/_meta";
@@ -19,6 +20,7 @@ export * from "./schema/engagements";
 export * from "./schema/calculations";
 export * from "./schema/tags";
 export * from "./schema/bootstrap-tokens";
+export * from "./schema/tax-year-tables";
 
 // Convenience re-export so consumers can pass `db.query.<table>` etc.
 export * as schema from "./schema/index";

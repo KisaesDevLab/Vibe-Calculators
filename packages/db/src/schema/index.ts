@@ -10,4 +10,5 @@ export * from "./engagements";
 export * from "./calculations";
 export * from "./tags";
 export * from "./bootstrap-tokens";
+export * from "./tax-year-tables";
 export * from "./relations";
