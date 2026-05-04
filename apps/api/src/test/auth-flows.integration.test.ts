@@ -8,7 +8,7 @@ import { TOTP, Secret } from "otpauth";
 import { makeTestDb, type TestDb, type TestHarness } from "./db-fixture.js";
 import { createApp } from "../server.js";
 import { hashPassword } from "../lib/password.js";
-import { createBootstrapManager } from "../lib/bootstrap.js";
+import { persistBootstrapToken } from "../lib/bootstrap.js";
 import { createKms } from "../lib/kms.js";
 import { sealerFrom } from "../lib/totp.js";
 import { createRateLimiter, memoryStore } from "../lib/rate-limit.js";
@@ -33,7 +33,6 @@ interface AppHarness {
   db: TestDb;
   app: Express;
   capturedMagicLinks: { email: string; token: string }[];
-  bootstrap: ReturnType<typeof createBootstrapManager>;
 }
 
 function buildAppHarness(db: TestDb): AppHarness {
@@ -41,7 +40,6 @@ function buildAppHarness(db: TestDb): AppHarness {
   const kms = createKms(randomBytes(32).toString("base64"));
   const totpSealer = sealerFrom(kms);
   const rateLimiter = createRateLimiter(memoryStore());
-  const bootstrap = createBootstrapManager();
   const env = { VIBE_DEPLOY_MODE: "lan" as const };
 
   const app = createApp({
@@ -51,7 +49,6 @@ function buildAppHarness(db: TestDb): AppHarness {
         db,
         env,
         rateLimiter,
-        bootstrap,
         totpSealer,
         emitMagicLinkEmail: (input) => {
           captured.push({ email: input.email, token: input.token });
@@ -59,7 +56,7 @@ function buildAppHarness(db: TestDb): AppHarness {
       },
     },
   });
-  return { db, app, capturedMagicLinks: captured, bootstrap };
+  return { db, app, capturedMagicLinks: captured };
 }
 
 async function seedUser(
@@ -218,9 +215,10 @@ describe("auth flows — integration", () => {
   // ----- First-run bootstrap -----------------------------------------
 
   it("bootstrap: zero users → setup token redeems for first admin", async () => {
-    await h.bootstrap.refresh(h.db);
-    expect(h.bootstrap.getState().kind).toBe("open");
-    const token = h.bootstrap.issueToken()!;
+    // Operator generates a token (mimicking `just bootstrap`).
+    const token = randomBytes(32).toString("hex");
+    const persisted = await persistBootstrapToken(h.db, token);
+    expect(persisted.ok).toBe(true);
 
     const r = await request(h.app).post("/api/v1/setup").send({
       token,
@@ -239,6 +237,19 @@ describe("auth flows — integration", () => {
       password: "Trombone-glacier-7!quiet-river2026",
     });
     expect(r2.status).toBe(410);
+  });
+
+  it("bootstrap CLI refuses to issue a token after first user exists", async () => {
+    await seedUser(h.db, {
+      email: "existing@firm.test",
+      name: "Existing",
+      role: "admin",
+      password: "Correct-horse-battery-staple-2026!",
+    });
+    const token = randomBytes(32).toString("hex");
+    const persisted = await persistBootstrapToken(h.db, token);
+    expect(persisted.ok).toBe(false);
+    if (!persisted.ok) expect(persisted.reason).toBe("users-exist");
   });
 
   // ----- Rate limit ---------------------------------------------------

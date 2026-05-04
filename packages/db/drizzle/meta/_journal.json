@@ -43,6 +43,13 @@
       "when": 1777923000000,
       "tag": "0005_fts_and_checks",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1777924477377,
+      "tag": "0006_bootstrap_tokens",
+      "breakpoints": true
     }
   ]
 }

@@ -1,94 +1,83 @@
-import { count, eq } from "drizzle-orm";
-import { randomBytes, createHash, timingSafeEqual } from "node:crypto";
-import { users, type Database } from "@vibe-calc/db";
+import { count, eq, gt } from "drizzle-orm";
+import { createHash, timingSafeEqual } from "node:crypto";
+import { bootstrapTokens, users, type Database } from "@vibe-calc/db";
 import { hashPassword, validatePasswordPolicy, type PolicyResult } from "./password.js";
 import { recordAuthEvent } from "./auth-events.js";
 
 /**
- * Phase 2.9 — first-run bootstrap.
+ * One-shot install bootstrap (DB-backed).
  *
- * On a virgin install (zero rows in users), the API generates a
- * 32-byte hex setup token at boot, prints it ONCE to stderr (with
- * a clear "do not store, do not screenshot, exchange in person"
- * banner), and accepts it on POST /api/v1/setup along with the new
- * admin's email + name + password. The token is only ever held in
- * memory; restarting the API issues a fresh token.
+ * Per session decision "bootstrap admin runs only once for install"
+ * the API does NOT auto-issue a token at boot. Operator runs
+ * `just bootstrap` after a fresh install — that CLI generates a
+ * token and writes its hash into bootstrap_tokens. The /api/v1/setup
+ * route looks the token up here and consumes it on first-admin
+ * creation.
  *
- * Once at least one user exists, the bootstrap subsystem returns
- * { kind: 'closed' } and the route returns 410 Gone forever.
+ * Token state survives API restart, but is consumed on use, and the
+ * route refuses to operate once any user exists.
  */
 
-const TOKEN_BYTES = 32;
-export type BootstrapState =
-  | { kind: "open"; tokenHash: string; createdAt: Date }
-  | { kind: "closed" };
-
-export interface BootstrapManager {
-  /** Returns the current state (memoized; refresh() reconciles with DB). */
-  getState(): BootstrapState;
-  /** Re-checks the DB and updates state. Called at server boot. */
-  refresh(db: Database): Promise<BootstrapState>;
-  /**
-   * Issues a new token. No-op if state is 'closed'. The bare token
-   * is returned ONCE — the manager only holds the hash thereafter.
-   */
-  issueToken(now?: Date): string | null;
-  /** True iff the supplied token matches the live one (constant-time). */
-  verifyToken(candidate: string): boolean;
-  /** Mark the bootstrap closed (after first admin is created). */
-  close(): void;
-}
-
-export function createBootstrapManager(): BootstrapManager {
-  let state: BootstrapState = { kind: "closed" };
-
-  return {
-    getState: () => state,
-
-    async refresh(db) {
-      const [row] = await db.select({ n: count() }).from(users);
-      const userCount = Number(row?.n ?? 0);
-      if (userCount === 0) {
-        if (state.kind !== "open") {
-          // Transition closed -> open. The token slot is empty until
-          // issueToken() is called so the bare token is never
-          // resident before the operator asks for it.
-          state = { kind: "open", tokenHash: "", createdAt: new Date() };
-        }
-        // Already open: preserve any existing tokenHash so refresh()
-        // called inside the /setup handler does not invalidate the
-        // token the operator just submitted.
-      } else {
-        state = { kind: "closed" };
-      }
-      return state;
-    },
-
-    issueToken(now = new Date()) {
-      if (state.kind !== "open") return null;
-      const token = randomBytes(TOKEN_BYTES).toString("hex");
-      const tokenHash = sha256Hex(token);
-      state = { kind: "open", tokenHash, createdAt: now };
-      return token;
-    },
-
-    verifyToken(candidate: string): boolean {
-      if (state.kind !== "open" || !state.tokenHash) return false;
-      const candidateHash = sha256Hex(candidate);
-      const a = Buffer.from(state.tokenHash, "hex");
-      const b = Buffer.from(candidateHash, "hex");
-      if (a.length !== b.length) return false;
-      return timingSafeEqual(a, b);
-    },
-
-    close() {
-      state = { kind: "closed" };
-    },
-  };
-}
+export const BOOTSTRAP_TOKEN_TTL_HOURS = 24;
+const TOKEN_HEX_LEN = 64; // 32 random bytes
 
 function sha256Hex(input: string): string {
   return createHash("sha256").update(input).digest("hex");
+}
+
+function constantTimeHexEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  const ab = Buffer.from(a, "hex");
+  const bb = Buffer.from(b, "hex");
+  if (ab.length !== bb.length) return false;
+  return timingSafeEqual(ab, bb);
+}
+
+export async function isUsersTableEmpty(db: Database): Promise<boolean> {
+  const [row] = await db.select({ n: count() }).from(users);
+  return Number(row?.n ?? 0) === 0;
+}
+
+/**
+ * Issue a fresh bootstrap token. Caller passes the bare token they
+ * generated (32 random bytes hex); we store only the SHA-256 digest.
+ * Refuses if any users already exist.
+ */
+export async function persistBootstrapToken(
+  db: Database,
+  token: string,
+  now: Date = new Date(),
+): Promise<{ ok: true; expiresAt: Date } | { ok: false; reason: "users-exist" }> {
+  if (token.length !== TOKEN_HEX_LEN || !/^[0-9a-f]+$/.test(token)) {
+    throw new Error("Bootstrap token must be 64 lowercase hex chars");
+  }
+  if (!(await isUsersTableEmpty(db))) {
+    return { ok: false, reason: "users-exist" };
+  }
+  const expiresAt = new Date(now.getTime() + BOOTSTRAP_TOKEN_TTL_HOURS * 60 * 60 * 1000);
+  // Single-token semantic: clear any prior tokens before insert.
+  await db.delete(bootstrapTokens);
+  await db.insert(bootstrapTokens).values({ tokenHash: sha256Hex(token), expiresAt });
+  return { ok: true, expiresAt };
+}
+
+/**
+ * Verify a candidate token. Returns `true` iff the token is live AND
+ * users table is still empty. Constant-time compare against every
+ * stored hash (typically 0 or 1 row).
+ */
+export async function verifyBootstrapToken(
+  db: Database,
+  candidate: string,
+  now: Date = new Date(),
+): Promise<boolean> {
+  if (!(await isUsersTableEmpty(db))) return false;
+  const candidateHash = sha256Hex(candidate);
+  const rows = await db.select().from(bootstrapTokens).where(gt(bootstrapTokens.expiresAt, now));
+  for (const r of rows) {
+    if (constantTimeHexEqual(r.tokenHash, candidateHash)) return true;
+  }
+  return false;
 }
 
 export interface FirstAdminInput {
@@ -104,13 +93,15 @@ export type FirstAdminResult =
   | { ok: false; reason: "bootstrap-closed" | "policy"; policy?: PolicyResult };
 
 /**
- * Atomically creates the very first admin user. Refuses if the
- * bootstrap is closed (a row exists in users) — an extra defense
- * against a race between issueToken/verifyToken and another writer.
+ * Create the first admin atomically:
+ *   - run password policy
+ *   - confirm users empty (race-defense if another writer slipped in)
+ *   - hash + insert the admin row
+ *   - DELETE all bootstrap_tokens so nothing else can be redeemed
+ *   - record auth_events row
  */
 export async function createFirstAdmin(
   db: Database,
-  manager: BootstrapManager,
   input: FirstAdminInput,
 ): Promise<FirstAdminResult> {
   const policy = validatePasswordPolicy(input.password, {
@@ -119,14 +110,11 @@ export async function createFirstAdmin(
   });
   if (!policy.ok) return { ok: false, reason: "policy", policy };
 
-  const [existing] = await db.select({ n: count() }).from(users);
-  if (Number(existing?.n ?? 0) !== 0) {
-    manager.close();
+  if (!(await isUsersTableEmpty(db))) {
     return { ok: false, reason: "bootstrap-closed" };
   }
 
   const passwordHash = await hashPassword(input.password);
-
   const [created] = await db
     .insert(users)
     .values({
@@ -137,10 +125,9 @@ export async function createFirstAdmin(
       status: "active",
     })
     .returning({ id: users.id });
-
   if (!created) throw new Error("First-admin insert returned no row");
 
-  manager.close();
+  await db.delete(bootstrapTokens);
 
   await recordAuthEvent(db, {
     kind: "bootstrap.first_admin",
@@ -154,9 +141,8 @@ export async function createFirstAdmin(
 }
 
 /**
- * Pretty-print the setup token to stderr — called once at boot when
- * the bootstrap manager is in 'open' state and a token has just
- * been issued. Tests stub `print` to capture the output.
+ * Pretty-print the operator banner. Called by the bootstrap CLI
+ * after persisting the token.
  */
 export function printBootstrapBanner(
   token: string,
@@ -171,18 +157,12 @@ export function printBootstrapBanner(
   print(`  ${token}`);
   print(``);
   print(`Visit /setup in your browser, paste the token, and complete the form.`);
-  print(`This token is shown ONCE. Restarting the API issues a fresh one.`);
-  print(`After the first admin is created, this code is no longer accepted.`);
+  print(`This token is shown ONCE. Re-run 'just bootstrap' if it's lost.`);
+  print(`After the first admin is created, the token is consumed forever.`);
   print(`${line}\n`);
 }
 
-export function isUsersTableEmpty(db: Database): Promise<boolean> {
-  return db
-    .select({ n: count() })
-    .from(users)
-    .then(([row]) => Number(row?.n ?? 0) === 0);
-}
-
-export const _internal = { sha256Hex };
-
-void eq; // future-use silencer; the bootstrap reads count(), not row lookups
+// Drizzle is currently re-exported here only for callers that already
+// import `eq` from this module. Keep `void eq` so the import never
+// goes unused-warned.
+void eq;

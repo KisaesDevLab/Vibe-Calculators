@@ -22,7 +22,8 @@
     "test": "vitest run",
     "drizzle:generate": "drizzle-kit generate",
     "drizzle:migrate": "tsx src/migrate.ts",
-    "seed": "tsx src/seed.ts"
+    "seed": "tsx src/seed.ts",
+    "bootstrap": "tsx src/bootstrap-cli.ts"
   },
   "dependencies": {
     "drizzle-orm": "0.36.4",

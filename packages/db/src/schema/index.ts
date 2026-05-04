@@ -9,4 +9,5 @@ export * from "./clients";
 export * from "./engagements";
 export * from "./calculations";
 export * from "./tags";
+export * from "./bootstrap-tokens";
 export * from "./relations";
