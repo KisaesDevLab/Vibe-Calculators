@@ -22,14 +22,22 @@ ARG PNPM_VERSION
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH \
     CI=1
-RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
+# Upgrade corepack first — the version bundled with node:20.15.0 ships
+# stale signing keys and rejects current pnpm releases ("Cannot find
+# matching keyid"). corepack >=0.31 has the rotated keys.
+RUN npm install -g corepack@0.33.0 \
+ && corepack enable \
+ && corepack prepare pnpm@${PNPM_VERSION} --activate
 WORKDIR /repo
 
 # ----------------------------------------------------------------------
 FROM base AS fetch
 COPY pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+# --ignore-scripts: fetch shouldn't run lifecycle hooks; in particular
+# simple-git-hooks' postinstall would fail here because the workspace
+# package.json files haven't been COPYd yet.
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm fetch --prod=false
+    pnpm fetch --prod=false --ignore-scripts
 
 # ----------------------------------------------------------------------
 FROM fetch AS build
@@ -37,7 +45,7 @@ COPY package.json tsconfig.base.json tsconfig.json ./
 COPY apps/api ./apps/api
 COPY packages ./packages
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm install --frozen-lockfile --offline
+    pnpm install --frozen-lockfile --offline --ignore-scripts
 RUN pnpm --filter @vibe-calc/api... build
 
 # ----------------------------------------------------------------------
@@ -45,7 +53,7 @@ FROM build AS prune
 # pnpm deploy assembles a self-contained directory containing only
 # the production dependencies and built output for the chosen package.
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm --filter @vibe-calc/api deploy --prod --legacy /deploy
+    pnpm --filter @vibe-calc/api deploy --prod /deploy
 
 # ----------------------------------------------------------------------
 FROM gcr.io/distroless/nodejs20-debian12:nonroot AS runtime

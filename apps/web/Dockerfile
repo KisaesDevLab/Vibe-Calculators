@@ -23,14 +23,22 @@ ARG PNPM_VERSION
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH \
     CI=1
-RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
+# Upgrade corepack first — the version bundled with node:20.15.0 ships
+# stale signing keys and rejects current pnpm releases ("Cannot find
+# matching keyid"). corepack >=0.31 has the rotated keys.
+RUN npm install -g corepack@0.33.0 \
+ && corepack enable \
+ && corepack prepare pnpm@${PNPM_VERSION} --activate
 WORKDIR /repo
 
 # ----------------------------------------------------------------------
 FROM base AS fetch
 COPY pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+# --ignore-scripts: fetch shouldn't run lifecycle hooks; in particular
+# simple-git-hooks' postinstall would fail here because the workspace
+# package.json files haven't been COPYd yet.
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm fetch --prod=false
+    pnpm fetch --prod=false --ignore-scripts
 
 # ----------------------------------------------------------------------
 FROM fetch AS build
@@ -38,7 +46,7 @@ COPY package.json tsconfig.base.json tsconfig.json ./
 COPY apps/web ./apps/web
 COPY packages ./packages
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm install --frozen-lockfile --offline
+    pnpm install --frozen-lockfile --offline --ignore-scripts
 RUN pnpm --filter @vibe-calc/web... build
 
 # ----------------------------------------------------------------------

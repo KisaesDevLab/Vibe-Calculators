@@ -83,11 +83,13 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      # Distroless has no shell or wget, so we drive node directly.
+      # Distroless has no shell or wget. Driving node directly. The
+      # absolute path is required because docker exec's PATH doesn't
+      # include /nodejs/bin where the distroless node binary lives.
       test:
         [
           "CMD",
-          "node",
+          "/nodejs/bin/node",
           "-e",
           "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
         ]
