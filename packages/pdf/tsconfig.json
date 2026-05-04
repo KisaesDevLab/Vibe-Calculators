@@ -4,9 +4,10 @@
     "rootDir": "src",
     "outDir": "dist",
     "composite": true,
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext"
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"]
   },
   "include": ["src/**/*"],
-  "references": [{ "path": "../shared-types" }]
+  "references": [{ "path": "../shared-types" }, { "path": "../calc-engine" }]
 }
