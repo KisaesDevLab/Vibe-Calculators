@@ -9,10 +9,12 @@ Status legend: `⏳ NOT STARTED`, `🚧 IN PROGRESS`, `🛑 BLOCKED (awaiting hu
 
 ## Phase 01 — Repository scaffold, monorepo layout, Docker baseline
 
-- **Status:** 🛑 BLOCKED (awaiting human sign-off — Phase 1 is in §9)
+- **Status:** ✅ COMPLETE
 - **Started:** 2026-05-04
-- **Finished (autopilot):** 2026-05-04
-- **Branch:** phase/01-scaffold (not yet merged to main)
+- **Finished:** 2026-05-04
+- **Branch:** phase/01-scaffold (merged to main as `4ca94fd`)
+- **Tag:** phase-01-complete
+- **Sign-off:** human-gating skipped per session directive (2026-05-04 "Read AUTOPILOT.md and continue the build. Do not await human signoff between phases. Continue development and ask questions to human at the end of development").
 - **Goal (from vibe-calculators-Build.md):** "a `docker compose up` that boots an empty but healthy app shell with frontend + backend + Postgres + Redis + Caddy."
 - **Acceptance (from vibe-calculators-Build.md):** "`just up` on a fresh laptop produces a working `/health` page; `/api/health` reports DB and Redis connected; CI pipeline green."
 
@@ -96,7 +98,25 @@ Once you've verified the three points above, reply with sign-off and the autopil
 
 ## Phase 02 — Authentication, users, sessions, RBAC
 
-- **Status:** ⏳ NOT STARTED
+- **Status:** 🚧 IN PROGRESS
+- **Started:** 2026-05-04
+- **Branch:** phase/02-auth
+- **Goal (from vibe-calculators-Build.md):** "staff CPAs can log in, sessions persist, roles enforce permissions."
+- **Acceptance (from vibe-calculators-Build.md):** "Admin can invite a preparer; preparer logs in with magic link, sets password, enables 2FA; readonly user cannot reach any mutation endpoint (verified by integration tests for every route)."
+- **Items:**
+  - [ ] 2.1 Drizzle schema (users, sessions, password_reset_tokens, magic_link_tokens)
+  - [ ] 2.2 Permission matrix in `@vibe-calc/shared-types/permissions.ts`
+  - [ ] 2.3 Argon2id password hashing + policy (≥12 chars, common-password block, optional zxcvbn)
+  - [ ] 2.4 Session cookies (HttpOnly/Secure/SameSite, 30-day rolling, 90-day absolute)
+  - [ ] 2.5 TOTP 2FA (RFC 6238) + recovery codes
+  - [ ] 2.6 Magic-link login (15-min, single-use, IP-bound)
+  - [ ] 2.7 Login rate limit (5 / 15min / IP+email)
+  - [ ] 2.8 `auth_events` audit log table
+  - [ ] 2.9 First-run bootstrap admin token
+  - [ ] 2.10 Admin user-management UI
+  - [ ] 2.11 Self-service: change password, 2FA, sessions
+  - [ ] 2.12 Express middleware: requireAuth / requireRole / requirePermission
+  - [ ] 2.13 Frontend: useAuth() + RequireAuth / RequirePerm components
 
 ## Phase 03 — Core domain schema: clients, engagements, calculations
 
