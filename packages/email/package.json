@@ -1,0 +1,28 @@
+{
+  "name": "@vibe-calc/email",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "lint": "eslint src --max-warnings=0"
+  },
+  "dependencies": {
+    "nodemailer": "6.9.16",
+    "zod": "3.23.8"
+  },
+  "devDependencies": {
+    "@types/nodemailer": "6.4.17",
+    "vitest": "2.1.4"
+  }
+}

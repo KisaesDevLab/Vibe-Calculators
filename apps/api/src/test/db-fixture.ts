@@ -52,6 +52,8 @@ function loadOrderedMigrations(): { name: string; sql: string }[] {
 }
 
 const TABLES_TO_TRUNCATE = [
+  "schedule_instances",
+  "schedules",
   "audit_events",
   "auth_events",
   "calculation_comments",
