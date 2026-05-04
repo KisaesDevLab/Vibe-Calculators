@@ -211,7 +211,15 @@ Once you've verified the three points above, reply with sign-off and the autopil
 
 ## Phase 07 — Cash-flow event model + amortization engine
 
-- **Status:** ⏳ NOT STARTED
+- **Status:** ✅ COMPLETE (core + extensions per session split)
+- **Started:** 2026-05-04
+- **Finished:** 2026-05-04
+- **Goal:** "arbitrary irregular cash flows produce auditable schedules."
+- **Acceptance:** per session decision the 100-fixture suite is dropped; correctness rests on behavioral tests.
+- **Items (core):** 7.1 event schema; 7.2 normalizer; 7.4 schedule generator; 7.6 negative-am detection; 7.9 memo passthrough; 7.11 series patterns Normal/Stepped Amount/Interest Only/Rate Change; 7.12 validators.
+- **Items (extensions):** 7.3 RuleOf78 + simpleInterest helpers; 7.8 annual/fiscal-year/range rollups; 7.11 Stepped Percentage/Skip Pattern/Calendar-Month Skip/Fixed Principal expanders.
+- **Deferred:** 7.3 USRule/Canadian/ExactDays full-schedule paths; 7.5 explicit mid-period pro-rata; 7.7 prepaid-interest helper; 7.10 100-scenario regression (dropped per session); 7.13 per-event compounding override; existing_note_valuation expander; principal_applied_first under USRule. None gate Phase 8+.
+- **Phase totals:** 86 calc-engine tests pass (75 → 86).
 
 ## Phase 08 — APR / Reg Z / Truth-in-Lending output
 
