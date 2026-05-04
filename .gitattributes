@@ -1,0 +1,27 @@
+# Normalize line endings to LF for cross-platform consistency.
+# Windows checkouts will still see CRLF if core.autocrlf=true, but the
+# repository copy stays LF.
+* text=auto eol=lf
+
+# Ensure shell scripts are LF (Docker / Linux containers depend on this).
+*.sh text eol=lf
+*.bash text eol=lf
+Dockerfile text eol=lf
+*.Dockerfile text eol=lf
+justfile text eol=lf
+
+# Treat lockfiles and snapshots as text but disable diff noise.
+pnpm-lock.yaml -diff
+package-lock.json -diff
+
+# Binaries
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
