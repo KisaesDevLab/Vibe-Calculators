@@ -12,6 +12,26 @@ describe("drizzle migrations", () => {
     expect(files).toContain("0000_initial.sql");
   });
 
+  it("includes the 0001_auth_schema migration", () => {
+    const files = readdirSync(drizzleDir).filter((f) => f.endsWith(".sql"));
+    expect(files).toContain("0001_auth_schema.sql");
+  });
+
+  it("creates the four phase-2 tables", () => {
+    const sql = readFileSync(join(drizzleDir, "0001_auth_schema.sql"), "utf8");
+    for (const t of ["users", "sessions", "password_reset_tokens", "magic_link_tokens"]) {
+      expect(sql).toMatch(new RegExp(`CREATE TABLE IF NOT EXISTS "${t}"`));
+    }
+  });
+
+  it("declares the four user roles", () => {
+    const sql = readFileSync(join(drizzleDir, "0001_auth_schema.sql"), "utf8");
+    expect(sql).toMatch(/'admin'/);
+    expect(sql).toMatch(/'reviewer'/);
+    expect(sql).toMatch(/'preparer'/);
+    expect(sql).toMatch(/'readonly'/);
+  });
+
   it("creates the _meta table with the documented columns", () => {
     const sql = readFileSync(join(drizzleDir, "0000_initial.sql"), "utf8");
     expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "_meta"/);
