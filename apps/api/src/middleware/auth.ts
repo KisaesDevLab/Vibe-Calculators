@@ -1,0 +1,144 @@
+import type { NextFunction, Request, RequestHandler, Response } from "express";
+import {
+  PermissionSchema,
+  RoleSchema,
+  permissionsFor,
+  roleAtLeast,
+  roleHasPermission,
+  type Permission,
+  type Role,
+} from "@vibe-calc/shared-types";
+import type { Database } from "@vibe-calc/db";
+import { SESSION_COOKIE_NAME, extendSession, resolveSession } from "../lib/sessions.js";
+import { refreshSessionCookie } from "../lib/cookies.js";
+import type { Env } from "../lib/env.js";
+
+/**
+ * Phase 2.12 — Express middleware for authentication and
+ * authorization.
+ *
+ * Per CLAUDE.md "permissions go through middleware" rule. Every
+ * mutating route uses requireAuth + (requireRole | requirePermission)
+ * — no inline `if (req.user.role === "admin")` checks anywhere.
+ */
+
+// req.user / req.session are augmented onto Express's Request in
+// apps/api/src/types/express.d.ts, which is auto-included by tsc.
+//
+// (The augmentation is in a top-level .d.ts rather than inline here
+// because TS's per-file module-augmentation resolution under NodeNext
+// resolves "express-serve-static-core" differently depending on the
+// importing file's resolution path; a global .d.ts is the consistent
+// way to attach the fields.)
+
+export interface AuthMiddlewareOptions {
+  db: Database;
+  env: Pick<Env, "VIBE_DEPLOY_MODE">;
+}
+
+/**
+ * Loads the session cookie if present and attaches req.user / req.session.
+ * Does NOT reject unauthenticated requests — pair with requireAuth()
+ * for routes that need a user.
+ */
+export function loadSession(opts: AuthMiddlewareOptions): RequestHandler {
+  return async (req, res, next) => {
+    const sid = req.cookies?.[SESSION_COOKIE_NAME] as unknown;
+    if (typeof sid !== "string" || sid.length === 0) return next();
+    try {
+      const resolved = await resolveSession(opts.db, sid);
+      if (!resolved) return next();
+      req.user = resolved.user;
+      req.session = resolved.session;
+      const extended = await extendSession(opts.db, resolved.session);
+      req.session = extended;
+      // Re-set the cookie's Max-Age to keep the browser-side window
+      // in sync with the DB-side rolling expires_at.
+      refreshSessionCookie(res, extended.id, { deployMode: opts.env.VIBE_DEPLOY_MODE });
+      next();
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
+/** Reject if no authenticated user is attached. */
+export const requireAuth: RequestHandler = (req, res, next) => {
+  if (!req.user || !req.session) {
+    return sendAuthError(res, 401, "Authentication required");
+  }
+  next();
+};
+
+/** Reject if the authenticated user's role is below `threshold`. */
+export function requireRole(threshold: Role): RequestHandler {
+  // Validate at build time that the threshold is a real role.
+  RoleSchema.parse(threshold);
+  return (req, res, next) => {
+    if (!req.user) return sendAuthError(res, 401, "Authentication required");
+    if (!roleAtLeast(req.user.role, threshold)) {
+      return sendAuthError(
+        res,
+        403,
+        `Role '${threshold}' or higher required (you are '${req.user.role}')`,
+      );
+    }
+    next();
+  };
+}
+
+/** Reject if the authenticated user's role does not grant `perm`. */
+export function requirePermission(perm: Permission): RequestHandler {
+  PermissionSchema.parse(perm);
+  return (req, res, next) => {
+    if (!req.user) return sendAuthError(res, 401, "Authentication required");
+    if (!roleHasPermission(req.user.role, perm)) {
+      return sendAuthError(res, 403, `Permission '${perm}' required`);
+    }
+    next();
+  };
+}
+
+/** Helper for routes that want to introspect the caller's permissions. */
+export function listPermissions(req: Request): readonly Permission[] {
+  if (!req.user) return [];
+  return permissionsFor(req.user.role);
+}
+
+function sendAuthError(res: Response, status: number, detail: string): void {
+  res.status(status).json({
+    type: status === 401 ? "about:blank#unauthorized" : "about:blank#forbidden",
+    title: status === 401 ? "Unauthorized" : "Forbidden",
+    status,
+    detail,
+  });
+}
+
+/** Tiny helper used by route handlers to emit RFC 7807 problem details. */
+export function problem(
+  res: Response,
+  status: number,
+  title: string,
+  detail: string,
+  extra: Record<string, unknown> = {},
+): void {
+  res.status(status).json({
+    type: `about:blank#${title.toLowerCase().replace(/\s+/g, "-")}`,
+    title,
+    status,
+    detail,
+    ...extra,
+  });
+}
+
+/** Returns the requesting client's IP, honouring X-Forwarded-For when set. */
+export function clientIp(req: Request): string {
+  const xff = req.headers["x-forwarded-for"];
+  if (typeof xff === "string" && xff.length > 0) {
+    return xff.split(",")[0]!.trim();
+  }
+  return req.ip ?? "0.0.0.0";
+}
+
+/** Coerce next() error-passers to a typed signature for chained handlers. */
+export type ChainHandler = (req: Request, res: Response, next: NextFunction) => Promise<void>;

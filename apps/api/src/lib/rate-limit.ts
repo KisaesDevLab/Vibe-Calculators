@@ -171,7 +171,12 @@ export function createRateLimiter(store: KeyValueStore): RateLimiter {
       if (lockTtl > 0) return { locked: true, retryAfterMs: lockTtl };
 
       const attempts = await store.incrEx(attemptsKey(k), ATTEMPT_WINDOW_SECONDS);
-      if (attempts < ATTEMPT_LIMIT) return { locked: false };
+      // ATTEMPT_LIMIT is the number of failures allowed within the
+      // window before locking. After 5 allowed failures the 6th
+      // (attempts > LIMIT) triggers the lockout. This matches the
+      // build plan's "5 attempts / 15 min" — five free tries, then
+      // lock.
+      if (attempts <= ATTEMPT_LIMIT) return { locked: false };
 
       const history = await store.incrEx(historyKey(k), LOCKOUT_HISTORY_WINDOW_SECONDS);
       const duration = lockoutDurationFor(history - 1);

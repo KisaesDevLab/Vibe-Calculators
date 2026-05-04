@@ -49,10 +49,15 @@ export function createBootstrapManager(): BootstrapManager {
       const [row] = await db.select({ n: count() }).from(users);
       const userCount = Number(row?.n ?? 0);
       if (userCount === 0) {
-        // Open state but waiting for an issueToken call so the bare
-        // token is never resident in memory before the operator asks
-        // for it.
-        state = { kind: "open", tokenHash: "", createdAt: new Date() };
+        if (state.kind !== "open") {
+          // Transition closed -> open. The token slot is empty until
+          // issueToken() is called so the bare token is never
+          // resident before the operator asks for it.
+          state = { kind: "open", tokenHash: "", createdAt: new Date() };
+        }
+        // Already open: preserve any existing tokenHash so refresh()
+        // called inside the /setup handler does not invalidate the
+        // token the operator just submitted.
       } else {
         state = { kind: "closed" };
       }
