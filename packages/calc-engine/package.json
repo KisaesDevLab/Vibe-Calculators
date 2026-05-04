@@ -18,6 +18,11 @@
     "test": "vitest run --passWithNoTests"
   },
   "devDependencies": {
+    "fast-check": "3.23.2",
     "vitest": "2.1.4"
+  },
+  "dependencies": {
+    "date-fns": "4.1.0",
+    "decimal.js": "10.4.3"
   }
 }
