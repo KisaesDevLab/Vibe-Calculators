@@ -1,0 +1,147 @@
+# Vibe Calculators — appliance compose file.
+#
+# Single-host deploy of the five-service appliance:
+#   caddy    : ingress (TLS terminator, reverse-proxy)
+#   web      : SPA static bundle served by an inner Caddy on :8080
+#   api      : Express server on :3000
+#   postgres : data plane
+#   redis    : cache + BullMQ queue backing
+#
+# The deploy mode (domain / lan / tailscale) is selected by the
+# VIBE_DEPLOY_MODE env, which the root Caddyfile (phase 1.11) reads
+# to choose between automatic ACME, plain HTTP on :80, and the
+# Tailscale serve integration.
+
+name: vibe-calculators
+
+x-restart: &restart unless-stopped
+
+services:
+  caddy:
+    image: caddy:2.8.4-alpine
+    restart: *restart
+    ports:
+      - "${VIBE_HTTP_PORT:-80}:80"
+      - "${VIBE_HTTPS_PORT:-443}:443"
+      - "${VIBE_HTTPS_PORT:-443}:443/udp"
+    environment:
+      VIBE_DEPLOY_MODE: ${VIBE_DEPLOY_MODE:-lan}
+      VIBE_DOMAIN: ${VIBE_DOMAIN:-vibecalc.local}
+      VIBE_TLS_EMAIL: ${VIBE_TLS_EMAIL:-admin@example.invalid}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_started
+      api:
+        condition: service_healthy
+    networks:
+      - vibe
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
+        VERSION: ${VIBE_VERSION:-0.0.0-dev}
+    image: ghcr.io/vibe-calculators/vibecalc-web:${VIBE_IMAGE_TAG:-dev}
+    restart: *restart
+    expose:
+      - "8080"
+    networks:
+      - vibe
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
+        VERSION: ${VIBE_VERSION:-0.0.0-dev}
+    image: ghcr.io/vibe-calculators/vibecalc-api:${VIBE_IMAGE_TAG:-dev}
+    restart: *restart
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: "3000"
+      DATABASE_URL: postgres://${POSTGRES_USER:-vibe}:${POSTGRES_PASSWORD:-vibe}@postgres:5432/${POSTGRES_DB:-vibecalc}
+      REDIS_URL: redis://redis:6379
+      VIBE_DEPLOY_MODE: ${VIBE_DEPLOY_MODE:-lan}
+      VIBE_OFFLINE: ${VIBE_OFFLINE:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      VIBE_KMS_KEY: ${VIBE_KMS_KEY:-}
+    expose:
+      - "3000"
+    volumes:
+      - pdf-output:/data/exports
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # Distroless has no shell or wget, so we drive node directly.
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    networks:
+      - vibe
+
+  postgres:
+    image: postgres:16-alpine
+    restart: *restart
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vibe}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vibe}
+      POSTGRES_DB: ${POSTGRES_DB:-vibecalc}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vibe} -d ${POSTGRES_DB:-vibecalc}"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - vibe
+
+  redis:
+    image: redis:7-alpine
+    restart: *restart
+    command:
+      - "redis-server"
+      - "--appendonly"
+      - "yes"
+      - "--save"
+      - "60"
+      - "1000"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - vibe
+
+volumes:
+  pgdata:
+  redisdata:
+  pdf-output:
+  caddy_data:
+  caddy_config:
+
+networks:
+  vibe:
+    driver: bridge
