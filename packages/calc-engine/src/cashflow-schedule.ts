@@ -3,6 +3,12 @@ import { money, rate, type Money, type Rate } from "./types.js";
 import { yearFraction } from "./day-count.js";
 import { addPeriods as addCompoundPeriods } from "./date-arithmetic.js";
 import { type CashFlowEvent, type MasterCalculationSettings } from "./cashflow-events.js";
+import {
+  expandCalendarMonthSkip,
+  expandFixedPrincipal,
+  expandSkipPattern,
+  expandSteppedPercentage,
+} from "./cashflow-extensions.js";
 
 /**
  * Phase 7.4 — schedule generator (Normal compute method).
@@ -104,6 +110,22 @@ export function expandSeries(events: CashFlowEvent[]): CashFlowEvent[] {
         });
         cursor = addCompoundPeriods(cursor, 1, interval);
       }
+      continue;
+    }
+    if (e.kind === "stepped_percentage") {
+      out.push(...expandSteppedPercentage(e));
+      continue;
+    }
+    if (e.kind === "skip_pattern") {
+      out.push(...expandSkipPattern(e));
+      continue;
+    }
+    if (e.kind === "calendar_month_skip") {
+      out.push(...expandCalendarMonthSkip(e));
+      continue;
+    }
+    if (e.kind === "fixed_principal") {
+      out.push(...expandFixedPrincipal(e));
       continue;
     }
     if (e.kind === "payment" || e.kind === "deposit" || e.kind === "withdrawal") {
@@ -225,6 +247,19 @@ export function generateSchedule(
         paymentApplied = interestAccrued;
         principalApplied = ZERO;
         cumInterest = cumInterest.plus(interestAccrued);
+        break;
+      }
+      case "fixed_principal": {
+        // Each row pays fixedPrincipal + interestAccrued. Interest
+        // is accrued and immediately paid (cash outflow), so it
+        // doesn't roll into the running balance — only the fixed
+        // principal portion reduces it.
+        const fixedP = (event.amount ?? ZERO).abs();
+        paymentApplied = fixedP.plus(interestAccrued);
+        principalApplied = fixedP;
+        balance = balance.minus(fixedP);
+        cumInterest = cumInterest.plus(interestAccrued);
+        cumPrincipal = cumPrincipal.plus(principalApplied);
         break;
       }
       case "memo":
