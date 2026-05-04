@@ -9,6 +9,7 @@ export * from "./schema/users";
 export * from "./schema/sessions";
 export * from "./schema/password-reset-tokens";
 export * from "./schema/magic-link-tokens";
+export * from "./schema/recovery-codes";
 
 // Convenience re-export so consumers can pass `db.query.<table>` etc.
 export * as schema from "./schema/index";
