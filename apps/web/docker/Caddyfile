@@ -1,9 +1,13 @@
-# Inner Caddyfile for the web container.
+# Inner Caddyfile for the vibe-calculators-client container.
 #
-# This Caddy is NOT the public ingress; the docker-compose 'caddy'
-# service (Caddyfile at the repo root) terminates TLS and reverse-
-# proxies / -> web:8080 and /api -> api:3000. This config just serves
-# the SPA static bundle with HTML5 history-mode fallback.
+# This Caddy is NOT the public ingress; the standalone docker-compose
+# 'caddy' service (Caddyfile at the repo root) and the Vibe-Appliance
+# host Caddy both reverse-proxy / -> vibe-calculators-client:80 and
+# /api -> vibe-calculators-server:3000. This config just serves the
+# SPA static bundle with HTML5 history-mode fallback.
+#
+# Internal port :80 matches the Vibe family convention (mybooks, tb,
+# tax-research, connect all use client:80).
 
 {
 	# Don't try to obtain certificates inside the inner web container.
@@ -11,7 +15,7 @@
 	admin off
 }
 
-:8080 {
+:80 {
 	root * /srv
 	encode zstd gzip
 

@@ -25,13 +25,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - image: vibecalc-api
+          - image: vibe-calculators-server
             dockerfile: apps/api/Dockerfile
-            title: "Vibe Calculators API"
+            title: "Vibe Calculators server"
             description: "Express server providing TVM + tax calculator REST endpoints"
-          - image: vibecalc-web
+          - image: vibe-calculators-client
             dockerfile: apps/web/Dockerfile
-            title: "Vibe Calculators web"
+            title: "Vibe Calculators client"
             description: "React SPA served by Caddy"
 
     steps:

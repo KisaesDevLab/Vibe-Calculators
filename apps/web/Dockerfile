@@ -8,10 +8,12 @@
 #   3. build  — install workspace deps offline, run vite build for
 #               apps/web (dependent shared-types is built first via
 #               pnpm's filter ... topological resolution)
-#   4. runtime — caddy:2-alpine serving dist/ on :8080. The top-level
-#               ingress Caddy reverse-proxies / -> web:8080 and /api
-#               -> api:3000 (see docker-compose.yml + Caddyfile,
-#               phases 1.10 / 1.11).
+#   4. runtime — caddy:2-alpine serving dist/ on :80 (Vibe family
+#               convention: every client tier listens on :80
+#               internally). The top-level ingress Caddy
+#               reverse-proxies / -> vibe-calculators-client:80 and
+#               /api -> vibe-calculators-server:3000 (see
+#               docker-compose.yml + Caddyfile, phases 1.10 / 1.11).
 
 ARG NODE_VERSION=20.15.0
 ARG PNPM_VERSION=9.15.9
@@ -68,6 +70,6 @@ LABEL org.opencontainers.image.title="vibecalc-web" \
 COPY apps/web/docker/Caddyfile /etc/caddy/Caddyfile
 COPY --from=build /repo/apps/web/dist /srv
 
-EXPOSE 8080
+EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
-  CMD wget -q -O - http://127.0.0.1:8080/ > /dev/null || exit 1
+  CMD wget -q -O - http://127.0.0.1/ > /dev/null || exit 1
