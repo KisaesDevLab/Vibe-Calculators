@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"]
+  },
+  "include": ["src/**/*"],
+  "references": [
+    { "path": "../../packages/shared-types" },
+    { "path": "../../packages/calc-engine" },
+    { "path": "../../packages/tax-engine" },
+    { "path": "../../packages/db" },
+    { "path": "../../packages/pdf" }
+  ]
+}

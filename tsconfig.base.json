@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "moduleDetection": "force",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "useUnknownInCatchVariables": true,
+
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "incremental": true,
+
+    "baseUrl": ".",
+    "paths": {
+      "@vibe-calc/calc-engine": ["packages/calc-engine/src/index.ts"],
+      "@vibe-calc/calc-engine/*": ["packages/calc-engine/src/*"],
+      "@vibe-calc/tax-engine": ["packages/tax-engine/src/index.ts"],
+      "@vibe-calc/tax-engine/*": ["packages/tax-engine/src/*"],
+      "@vibe-calc/shared-types": ["packages/shared-types/src/index.ts"],
+      "@vibe-calc/shared-types/*": ["packages/shared-types/src/*"],
+      "@vibe-calc/db": ["packages/db/src/index.ts"],
+      "@vibe-calc/db/*": ["packages/db/src/*"],
+      "@vibe-calc/pdf": ["packages/pdf/src/index.ts"],
+      "@vibe-calc/pdf/*": ["packages/pdf/src/*"]
+    }
+  }
+}
