@@ -4,3 +4,4 @@ export * from "./sessions";
 export * from "./password-reset-tokens";
 export * from "./magic-link-tokens";
 export * from "./recovery-codes";
+export * from "./auth-events";
