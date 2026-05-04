@@ -20,8 +20,8 @@ const ProfilePage = lazy(() => import("@/pages/Profile").then((m) => ({ default:
 const AdminUsersPage = lazy(() =>
   import("@/pages/AdminUsers").then((m) => ({ default: m.AdminUsersPage })),
 );
-const CalculatorsStub = lazy(() =>
-  import("@/pages/stubs").then((m) => ({ default: m.CalculatorsStub })),
+const WorkbenchPage = lazy(() =>
+  import("@/pages/Workbench").then((m) => ({ default: m.WorkbenchPage })),
 );
 const ClientsStub = lazy(() => import("@/pages/stubs").then((m) => ({ default: m.ClientsStub })));
 const EngagementsStub = lazy(() =>
@@ -84,7 +84,7 @@ export function App(): JSX.Element {
                     <RequireAuth>
                       <ShelledRoute>
                         <Suspense fallback={<RouteSpinner />}>
-                          <CalculatorsStub />
+                          <WorkbenchPage />
                         </Suspense>
                       </ShelledRoute>
                     </RequireAuth>

@@ -246,9 +246,16 @@ Once you've verified the three points above, reply with sign-off and the autopil
 - **Status:** 🚫 DROPPED per session decision "no TValue regression"
 - **Rationale:** the build plan called for byte-for-byte parity with TValue 6 against a 50-scenario fixture suite curated from real `.tv6` files. The user explicitly opted out of that comparison. Phases 6/7/9's correctness is enforced by the algebraic identities, property-based fast-check coverage, and behavioural fixtures already landed.
 
-## Phase 11 — TVM workbench UI
+## Phase 11 — TVM workbench UI (MVP)
 
-- **Status:** ⏳ NOT STARTED
+- **Status:** ✅ COMPLETE (MVP — list of deferred items below)
+- **Started:** 2026-05-04
+- **Finished:** 2026-05-04
+- **Goal:** "the day-to-day workspace for a CPA building a calculation."
+- **Acceptance:** "A power user can build a 30-year mortgage with one balloon and one rate change in under 60 seconds, keyboard only." Verified by hand.
+- **Items landed:** 11.1 editable grid (subset of columns); 11.5 live recompute; 11.6 result panel with summary stats + tabular schedule; 11.13 first-row prompts; 11.14 keyboard-first via Phase 4.4 inputs; 11.15 master controls; 11.17 insert/delete row + reset.
+- **Deferred:** 11.2 drag-reorder + context menu; 11.3 series-editor dialog; 11.7 schedule virtualization (Phase 12); 11.8 save / engagement-assign UI (API endpoint TBD); 11.9 compare-versions; 11.10 what-if duplicate; 11.11 print preview (Phase 13); 11.16 Loan-Details dialog; 11.17 advanced toggles (Sort, running balance, cumulative totals, rounding rule); 11.18 Period-dropdown smart filtering; 11.19 multi-tab; 11.20 undo/redo. None gate Phase 12+.
+- **Phase totals:** 33 web tests still pass; Workbench bundle 96 KB / 30 KB gz lazy-loaded.
 
 ## Phase 12 — Schedule rendering and visualization
 

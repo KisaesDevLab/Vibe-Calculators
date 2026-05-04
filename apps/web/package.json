@@ -21,6 +21,7 @@
     "@radix-ui/react-tabs": "1.1.2",
     "@radix-ui/react-tooltip": "1.1.6",
     "@tanstack/react-query": "5.62.0",
+    "@vibe-calc/calc-engine": "workspace:*",
     "@vibe-calc/shared-types": "workspace:*",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
