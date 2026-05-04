@@ -11,4 +11,5 @@ export * from "./calculations";
 export * from "./tags";
 export * from "./bootstrap-tokens";
 export * from "./tax-year-tables";
+export * from "./audit-events";
 export * from "./relations";

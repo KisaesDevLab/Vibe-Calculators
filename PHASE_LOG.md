@@ -471,7 +471,33 @@ Once you've verified the three points above, reply with sign-off and the autopil
 
 ## Phase 21 — Versioning, audit trail, reviewer/preparer workflow
 
-- **Status:** ⏳ NOT STARTED
+- **Status:** ✅ COMPLETE
+- **Started:** 2026-05-04
+- **Finished:** 2026-05-04
+- **Sign-off:** human-gating skipped per session directive.
+
+### Items landed
+
+- [x] 21.1 Save = create new immutable `calculation_versions` row + bump `current_version_id`. Approved calcs reject saves until rollback.
+- [x] 21.2 Rollback creates a NEW version copying the target's payload (history is never overwritten); status reverts to draft.
+- [x] 21.3 `audit_events` table with prev_hash + row_hash chain (`AUDIT_EVENTS_GENESIS_HASH` sentinel); 26-action enum + 6-entity-kind enum; insert-only; 4 indexes.
+- [x] 21.4 Workflow endpoints: `submit-for-review` (preparer+), `approve` (reviewer+ — locks version), `reject` (reviewer+ — back to draft, optional reason becomes a comment).
+- [x] 21.5 `calculation_comments` table + GET/POST endpoints; review reasons auto-recorded.
+- [x] 21.6 `GET /diff?a=&b=` shallow JSON diff over inputs.
+
+### Verification
+
+- 5 new integration tests pass:
+  - save bumps version pointer
+  - rollback creates a new version, never overwrites
+  - approve locks; preparer cannot approve; saving an approved calc returns 409
+  - reject reverts to draft + persists reason as a comment
+  - audit chain validates intact, then breaks with `row-hash-mismatch` after a hand-tampered payload
+- 110 API tests total. Monorepo `pnpm -r typecheck` + `pnpm -r lint` green.
+
+### Migration
+
+- New SQL migration `0008_audit_events.sql` adds `audit_events` + `calculation_comments` plus their indexes; `_journal.json` updated.
 
 ## Phase 22 — Saved calc scheduling, AFR auto-update, email delivery
 

@@ -52,7 +52,9 @@ function loadOrderedMigrations(): { name: string; sql: string }[] {
 }
 
 const TABLES_TO_TRUNCATE = [
+  "audit_events",
   "auth_events",
+  "calculation_comments",
   "magic_link_tokens",
   "password_reset_tokens",
   "recovery_codes",
