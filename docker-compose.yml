@@ -30,6 +30,7 @@ services:
       VIBE_TLS_EMAIL: ${VIBE_TLS_EMAIL:-admin@example.invalid}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/snippets:/etc/caddy/snippets:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:

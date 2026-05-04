@@ -1,0 +1,14 @@
+# Override file for tailscale deploy mode.
+#
+# Usage:
+#   VIBE_DEPLOY_MODE=tailscale \
+#     docker compose -f docker-compose.yml -f compose.tailscale.override.yml up -d
+#
+# The host's `tailscale serve` terminates TLS and forwards plaintext
+# HTTP to localhost:${VIBE_TS_PORT:-8000}. This override removes the
+# 80/443 host bindings (not used in tailscale mode) and adds 8000.
+
+services:
+  caddy:
+    ports: !reset
+      - "${VIBE_TS_PORT:-8000}:8000"
