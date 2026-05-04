@@ -4,13 +4,14 @@
 // regardless of whether the augmenting middleware module has been
 // imported in any given handler file.
 
-import type { SessionRow, UserRow } from "@vibe-calc/db";
+import type { ApiKeyRow, SessionRow, UserRow } from "@vibe-calc/db";
 
 declare global {
   namespace Express {
     interface Request {
       user?: UserRow;
       session?: SessionRow;
+      apiKey?: ApiKeyRow;
     }
   }
 }

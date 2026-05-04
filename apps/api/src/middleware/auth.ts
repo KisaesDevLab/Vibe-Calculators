@@ -9,8 +9,11 @@ import {
   type Role,
 } from "@vibe-calc/shared-types";
 import type { Database } from "@vibe-calc/db";
+import { eq } from "drizzle-orm";
+import { users } from "@vibe-calc/db";
 import { SESSION_COOKIE_NAME, extendSession, resolveSession } from "../lib/sessions.js";
 import { refreshSessionCookie } from "../lib/cookies.js";
+import { verifyApiKeyHeader } from "../lib/api-keys.js";
 import type { Env } from "../lib/env.js";
 
 /**
@@ -43,17 +46,38 @@ export interface AuthMiddlewareOptions {
  */
 export function loadSession(opts: AuthMiddlewareOptions): RequestHandler {
   return async (req, res, next) => {
-    const sid = req.cookies?.[SESSION_COOKIE_NAME] as unknown;
-    if (typeof sid !== "string" || sid.length === 0) return next();
     try {
+      // Try Authorization: Bearer vibe_… first (Phase 24.2 API keys).
+      const authHeader = req.headers.authorization;
+      if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
+        const verified = await verifyApiKeyHeader(opts.db, authHeader);
+        if (verified && !verified.expired && !verified.revoked) {
+          // API keys may carry an act_as_user_id — resolve it so role
+          // checks work against a real user. If absent, the key is
+          // limited to its scopes via requirePermission below.
+          if (verified.row.actAsUserId) {
+            const [actAs] = await opts.db
+              .select()
+              .from(users)
+              .where(eq(users.id, verified.row.actAsUserId))
+              .limit(1);
+            if (actAs) {
+              req.user = actAs;
+              req.apiKey = verified.row;
+              return next();
+            }
+          }
+        }
+      }
+
+      const sid = req.cookies?.[SESSION_COOKIE_NAME] as unknown;
+      if (typeof sid !== "string" || sid.length === 0) return next();
       const resolved = await resolveSession(opts.db, sid);
       if (!resolved) return next();
       req.user = resolved.user;
       req.session = resolved.session;
       const extended = await extendSession(opts.db, resolved.session);
       req.session = extended;
-      // Re-set the cookie's Max-Age to keep the browser-side window
-      // in sync with the DB-side rolling expires_at.
       refreshSessionCookie(res, extended.id, { deployMode: opts.env.VIBE_DEPLOY_MODE });
       next();
     } catch (err) {

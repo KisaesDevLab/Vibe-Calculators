@@ -17,6 +17,9 @@ import { buildVersioningRouter, type VersioningRouteDeps } from "./routes/versio
 import { buildAuditRouter, type AuditRouteDeps } from "./routes/audit.js";
 import { buildSchedulesRouter, type ScheduleRouteDeps } from "./routes/schedules.js";
 import { buildExtractionsRouter, type ExtractionRouteDeps } from "./routes/extractions.js";
+import { buildApiKeysRouter, type ApiKeysRouteDeps } from "./routes/api-keys.js";
+import { buildWebhooksRouter, type WebhooksRouteDeps } from "./routes/webhooks.js";
+import { buildOpenApiRouter } from "./routes/openapi.js";
 import { loadSession, type AuthMiddlewareOptions } from "./middleware/auth.js";
 
 export interface ServerOptions {
@@ -38,7 +41,9 @@ export interface ServerOptions {
       VersioningRouteDeps &
       AuditRouteDeps &
       ScheduleRouteDeps &
-      ExtractionRouteDeps;
+      ExtractionRouteDeps &
+      ApiKeysRouteDeps &
+      WebhooksRouteDeps;
   };
 }
 
@@ -57,6 +62,7 @@ export function createApp(options: ServerOptions = {}): Express {
   app.use(express.json({ limit: "1mb" }));
 
   app.use("/api/health", buildHealthRouter(options.health));
+  app.use("/api/v1", buildOpenApiRouter());
 
   if (options.auth) {
     app.use(loadSession(options.auth.middleware));
@@ -64,6 +70,8 @@ export function createApp(options: ServerOptions = {}): Express {
     app.use("/api/v1/auth", buildAuthRouter(options.auth.routes));
     app.use("/api/v1/me", buildMeRouter(options.auth.routes));
     app.use("/api/v1/admin/users", buildAdminUsersRouter(options.auth.routes));
+    app.use("/api/v1/admin/api-keys", buildApiKeysRouter(options.auth.routes));
+    app.use("/api/v1/webhooks", buildWebhooksRouter(options.auth.routes));
     app.use("/api/v1/clients", buildClientsRouter(options.auth.routes));
     app.use("/api/v1/engagements", buildEngagementsRouter(options.auth.routes));
     app.use("/api/v1/calculations", buildCalculationsRouter(options.auth.routes));

@@ -14,4 +14,5 @@ export * from "./tax-year-tables";
 export * from "./audit-events";
 export * from "./schedules";
 export * from "./extractions";
+export * from "./api-keys";
 export * from "./relations";
