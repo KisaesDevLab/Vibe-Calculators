@@ -278,7 +278,13 @@ Once you've verified the three points above, reply with sign-off and the autopil
 
 ## Phase 14 — Tax-year rate tables and locking mechanism
 
-- **Status:** ⏳ NOT STARTED
+- **Status:** ✅ COMPLETE
+- **Started:** 2026-05-04
+- **Finished:** 2026-05-04
+- **Items landed:** 14.1 tax_year_tables schema (year/kind/payload/effective window/source URL/version/supersededAt); 14.2 18-kind enum; 14.3 seed values for 2024+2025 from Rev. Proc. 2023-34 + 2024-40, IRS Notice 2023-75 + 2024-80, Rev. Proc. 2023-23 + 2024-25, SSA — federal_tax_brackets / standard_deduction / fica_wage_base / qbi_thresholds / hsa_contribution_limits / retirement_contribution_limits / amt_exemption / section_179_limits / bonus_depreciation_pct / niit_thresholds / medicare_thresholds; 14.7 tax_year_overrides escape hatch (OBBBA / SECURE 2.0 mid-year); 14.8 resolveTaxRow runtime resolver (override → live table → null).
+- **Per session decision:** values seeded from authoritative IRS/SSA sources. **CPA needs to spot-check before shipping to a real firm**; each row carries sourceUrl + sourceVersion.
+- **Deferred:** large invariant lookup tables (RMD, AFR, MACRS, SS-optimal-age) — seeded when consuming calculators land in 16-19; 14.5 annual-update workflow UI; 14.6 admin browse UI.
+- **Phase totals:** 54 db tests (44 → 54).
 
 ## Phase 15 — Tax engine framework + calculator scaffolding
 

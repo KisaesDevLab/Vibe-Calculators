@@ -50,6 +50,13 @@
       "when": 1777924477377,
       "tag": "0006_bootstrap_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1777928750362,
+      "tag": "0007_tax_year_tables",
+      "breakpoints": true
     }
   ]
 }
