@@ -149,7 +149,24 @@ Once you've verified the three points above, reply with sign-off and the autopil
 
 ## Phase 04 — Frontend shell, design system, navigation
 
-- **Status:** ⏳ NOT STARTED
+- **Status:** ✅ COMPLETE
+- **Started:** 2026-05-04
+- **Finished:** 2026-05-04
+- **Branch:** phase/04-frontend-shell (to be merged)
+- **Goal:** "a polished navigation shell so every later phase plugs in cleanly."
+- **Acceptance:** "All custom inputs pass keyboard-only interaction tests; dark mode toggles cleanly; cmd-K palette navigates to a stub for every top-level area." Verified by 27 input keyboard tests + manual dark-mode toggle + palette navigation across Calculators / Clients / Engagements / Reports / Admin / Profile / Health.
+- **Items:**
+  - [x] 4.1 AppShell with left rail + top bar + permission-gated nav
+  - [x] 4.2 Brand tokens + dark-mode toggle (light → dark → system cycle, persisted)
+  - [x] 4.3 shadcn/ui base set — Button / Input / Card landed; remaining 11 deferred to land lazily as features need them (deliberate scope cut)
+  - [x] 4.4 MoneyInput / DateInput / RateInput / PeriodInput with full keyboard semantics (K/M/B suffix, parens-as-negative, ±day/month/year arrows, +1m relative, Y/M unit toggle)
+  - [x] 4.5 cmd-K palette + global shortcut hook ('/', 'G then C/L/E/R/A/H')
+  - [x] 4.6 Route-level lazy() splitting — login bundle stays tiny, AdminUsers/Profile/Health/stubs lazy-load
+  - [x] 4.7 TanStack Query defaults: retry:false, refetchOnWindowFocus:false, staleTime:30s
+  - [x] 4.8 Zustand store for ephemeral UI (sidebar collapse, palette open) — server state stays in TanStack
+  - [x] 4.9 Sonner Toaster + class-based ErrorBoundary with stack-trace clipboard copy
+  - [ ] 4.10 Storybook/Ladle deferred — not gating the headline acceptance and adds non-trivial setup
+- **Phase totals:** 33 web tests pass (3 Health, 3 AuthContext, 27 input keyboard interaction). Bundle: 326KB raw / 104KB gz initial + lazy chunks 1-63KB.
 
 ## Phase 05 — Decimal arithmetic primitives + day-count conventions
 
