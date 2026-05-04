@@ -567,7 +567,32 @@ Once you've verified the three points above, reply with sign-off and the autopil
 
 ## Phase 24 — REST API and webhooks
 
-- **Status:** ⏳ NOT STARTED
+- **Status:** ✅ COMPLETE
+- **Started:** 2026-05-04
+- **Finished:** 2026-05-04
+- **Sign-off:** human-gating skipped per session directive; user confirmed per-firm-API-key auth model.
+
+### Items landed
+
+- [x] 24.1 Public REST surface — every Phase 20-23 route is part of the public API; `Authorization: Bearer vibe_<token>` works alongside session cookies.
+- [x] 24.2 Per-firm API keys — `api_keys` table (SHA-256 hashed token, 8-char prefix display, optional act-as user, optional expiry); `POST /api/v1/admin/api-keys` issues (plaintext returned ONCE), `/:id/revoke` invalidates; `verifyApiKeyHeader()` validates and updates `last_used_at` non-blocking.
+- [x] 24.3 Webhook subscriptions — `webhook_subscriptions` table; `POST /api/v1/webhooks` issues signing secret (returned once); `dispatchWebhook` signs `X-Vibe-Signature: t=<unix>,v1=<hmac>` Stripe-style; `verifyWebhookSignature` for consumers; action-filter array (empty = all events).
+- [x] 24.4 OpenAPI spec — `GET /api/v1/openapi.json` (publicly served, no auth) — hand-curated 3.0.3 doc covering every public endpoint with both security schemes wired.
+- [x] 24.5 Rate limiting — existing `createRateLimiter` infra is the auth-failure backstop; per-API-key burst limits deferred (same store when needed).
+
+### Verification
+
+- 4 new integration tests pass:
+  - admin issues key, bearer auths against `/api/v1/clients`
+  - revoked key returns 401
+  - OpenAPI spec served publicly with both security schemes + path coverage
+  - webhook dispatcher fires only matching subscriptions, signs body, signature verifies via `verifyWebhookSignature`
+- 123 total API tests + 4 LLM + 6 email = 133 tests across the full surface. Monorepo `pnpm -r typecheck` + `pnpm -r lint` green.
+
+### Deferred
+
+- 24.5 Per-API-key rate-limit policy (RPS / daily quota) — wired when production traffic patterns are known.
+- 24.3 Webhook delivery retry queue — MVP fires once and records last failure; BullMQ-backed exponential backoff is a Phase 25 follow-up.
 
 ## Phase 25 — Docker appliance packaging, setup wizard, backup/restore
 

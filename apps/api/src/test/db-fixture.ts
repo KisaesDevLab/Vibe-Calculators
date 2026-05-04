@@ -52,6 +52,8 @@ function loadOrderedMigrations(): { name: string; sql: string }[] {
 }
 
 const TABLES_TO_TRUNCATE = [
+  "webhook_subscriptions",
+  "api_keys",
   "extraction_jobs",
   "schedule_instances",
   "schedules",
