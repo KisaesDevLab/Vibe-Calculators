@@ -42,7 +42,7 @@
 import pg from "pg";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { taxYearTables, type TaxTableKind } from "./schema/tax-year-tables";
+import { taxYearTables, taxYearOverrides, type TaxTableKind } from "./schema/tax-year-tables";
 
 interface SeedRow {
   taxYear: number;
@@ -51,6 +51,10 @@ interface SeedRow {
   payload: Record<string, unknown>;
   sourceUrl: string;
   sourceVersion: string;
+}
+
+interface SeedOverrideRow extends SeedRow {
+  note: string;
 }
 
 const utcJan1 = (year: number): Date => new Date(Date.UTC(year, 0, 1));
@@ -414,6 +418,23 @@ const SEED: SeedRow[] = [
   },
 ];
 
+/**
+ * Phase 16.3 — OBBBA mid-year reinstatement of 100% bonus
+ * depreciation for property placed in service on/after 2025-01-20.
+ * Uses the tax_year_overrides escape hatch from Phase 14.7.
+ */
+const OVERRIDE_SEED: SeedOverrideRow[] = [
+  {
+    taxYear: 2025,
+    kind: "bonus_depreciation_pct",
+    effectiveFrom: new Date(Date.UTC(2025, 0, 20)),
+    sourceUrl: "https://www.congress.gov/bill/119th-congress/house-bill/1",
+    sourceVersion: "OBBBA — H.R. 1, 119th Cong. (2025)",
+    payload: { pct: 1.0 },
+    note: "100% bonus reinstated for property placed in service on/after 2025-01-20.",
+  },
+];
+
 async function main(): Promise<void> {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
@@ -441,7 +462,25 @@ async function main(): Promise<void> {
     await db.insert(taxYearTables).values(row);
     inserted++;
   }
-  console.info(`[seed-tax-tables] inserted ${inserted} of ${SEED.length} rows`);
+  let overridesInserted = 0;
+  for (const row of OVERRIDE_SEED) {
+    const existing = await db
+      .select({ id: taxYearOverrides.id })
+      .from(taxYearOverrides)
+      .where(
+        and(
+          eq(taxYearOverrides.taxYear, row.taxYear),
+          eq(taxYearOverrides.kind, row.kind),
+          eq(taxYearOverrides.effectiveFrom, row.effectiveFrom),
+        ),
+      );
+    if (existing.length > 0) continue;
+    await db.insert(taxYearOverrides).values(row);
+    overridesInserted++;
+  }
+  console.info(
+    `[seed-tax-tables] inserted ${inserted}/${SEED.length} table rows, ${overridesInserted}/${OVERRIDE_SEED.length} override rows`,
+  );
   await pool.end();
 }
 
@@ -453,4 +492,4 @@ if (process.argv[1] && /seed-tax-tables/.test(process.argv[1])) {
   });
 }
 
-export { SEED };
+export { SEED, OVERRIDE_SEED };

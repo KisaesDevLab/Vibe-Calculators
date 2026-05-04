@@ -7,3 +7,8 @@ export * from "./fixture-runner.js";
 // Side-effecting imports below register calculators on the registry.
 // Adding a new calculator means: write the module, add it here.
 import "./calculators/toy-double.js";
+import "./calculators/macrs.js";
+import "./calculators/section-179.js";
+import "./calculators/bonus-168k.js";
+import "./calculators/depreciation-waterfall.js";
+import "./calculators/cost-segregation.js";

@@ -56,10 +56,17 @@ export interface ComputeContext {
 
 export interface TaxCalculator<I, O> {
   metadata: TaxCalculatorMetadata;
-  /** Zod schema for the inputs. Powers Phase 15.4 form generation. */
-  inputSchema: z.ZodSchema<I>;
+  /**
+   * Zod schema for the inputs. Powers Phase 15.4 form generation.
+   *
+   * The third generic is `unknown` so calculators can use
+   * `.default()` / `.optional()` — the parsed *output* type still
+   * matches `I`, but the raw input is allowed to omit defaulted
+   * fields.
+   */
+  inputSchema: z.ZodType<I, z.ZodTypeDef, unknown>;
   /** Zod schema for the outputs (used by tests + Phase 15.5 result panel). */
-  outputSchema: z.ZodSchema<O>;
+  outputSchema: z.ZodType<O, z.ZodTypeDef, unknown>;
   /**
    * Validate raw user input. The default implementation runs
    * inputSchema.safeParse; calculators with cross-field rules (e.g.
