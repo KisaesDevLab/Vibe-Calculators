@@ -1,0 +1,32 @@
+{
+  "name": "@vibe-calc/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src --max-warnings=0",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "express": "4.21.1",
+    "helmet": "8.0.0",
+    "ioredis": "5.4.1",
+    "pg": "8.13.1",
+    "pino": "9.5.0",
+    "zod": "3.23.8"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.0",
+    "@types/pg": "8.11.10",
+    "@types/supertest": "6.0.2",
+    "pino-pretty": "13.0.0",
+    "supertest": "7.0.0",
+    "tsx": "4.19.2",
+    "vitest": "2.1.4"
+  }
+}

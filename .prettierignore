@@ -1,0 +1,24 @@
+node_modules/
+dist/
+build/
+coverage/
+.turbo/
+.vite/
+storybook-static/
+playwright-report/
+test-results/
+pdf-output/
+data/
+pgdata/
+redisdata/
+pnpm-lock.yaml
+*.min.js
+*.min.css
+
+# Authoritative documents — autopilot §11.1 forbids modification.
+# Prettier must not touch these even for whitespace.
+AUTOPILOT.md
+CLAUDE.md
+vibe-calculators-Build.md
+PHASE_LOG.md
+PROPOSED_AMENDMENTS.md

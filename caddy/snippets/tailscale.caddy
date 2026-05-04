@@ -1,0 +1,15 @@
+# Tailscale mode: TLS is terminated outside Caddy by `tailscale serve`
+# running on the host. The host forwards plaintext HTTP to this
+# container on :8000. The container is reachable only inside the
+# tailnet, so plaintext-on-the-wire is safe (the tailnet is the
+# encrypted boundary).
+#
+# Setup notes for the operator:
+#   sudo tailscale serve --bg --https=443 http://localhost:8000
+#
+# Note: an explicit-port listener like :8000 doesn't trigger Caddy's
+# automatic HTTPS, so no auto_https override is needed here.
+
+:8000 {
+	import vibe_routes
+}

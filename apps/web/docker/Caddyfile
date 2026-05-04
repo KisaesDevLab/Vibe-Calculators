@@ -1,0 +1,33 @@
+# Inner Caddyfile for the vibe-calculators-client container.
+#
+# This Caddy is NOT the public ingress; the standalone docker-compose
+# 'caddy' service (Caddyfile at the repo root) and the Vibe-Appliance
+# host Caddy both reverse-proxy / -> vibe-calculators-client:80 and
+# /api -> vibe-calculators-server:3000. This config just serves the
+# SPA static bundle with HTML5 history-mode fallback.
+#
+# Internal port :80 matches the Vibe family convention (mybooks, tb,
+# tax-research, connect all use client:80).
+
+{
+	# Don't try to obtain certificates inside the inner web container.
+	auto_https off
+	admin off
+}
+
+:80 {
+	root * /srv
+	encode zstd gzip
+
+	# Long-cache hashed assets; never cache the index.
+	@hashed path *.[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f].*
+	header @hashed Cache-Control "public, max-age=31536000, immutable"
+
+	@index path / /index.html
+	header @index Cache-Control "no-cache"
+
+	# SPA fallback: any non-file request returns index.html so client-
+	# side routing handles it.
+	try_files {path} /index.html
+	file_server
+}

@@ -1,0 +1,51 @@
+# Vibe Calculators ingress Caddyfile.
+#
+# This dispatcher loads one of three mode-specific snippets based on
+# the VIBE_DEPLOY_MODE env var:
+#
+#   lan       — HTTP on :80, no TLS.       (default for first-run / on-prem)
+#   domain    — HTTPS via ACME (Let's Encrypt) for VIBE_DOMAIN.
+#   tailscale — HTTPS terminated outside Caddy (by `tailscale serve`),
+#               internal Caddy listens HTTP on :8000 inside the tailnet.
+#
+# All three snippets share the (vibe_routes) block defined here for
+# the actual request handling: /api/* -> api:3000, everything else
+# -> web:8080.
+#
+# To switch mode: set VIBE_DEPLOY_MODE in .env and restart the caddy
+# container. The variable is consumed by the import below.
+
+{
+	# Caddy's global options block.
+	# auto_https is enabled by default; the lan and tailscale snippets
+	# turn it off because they don't terminate TLS.
+	admin off
+	persist_config off
+}
+
+# Reusable route block used by every mode. handle_path strips /api so
+# the API never sees its own prefix.
+(vibe_routes) {
+	encode zstd gzip
+
+	handle /api/* {
+		reverse_proxy vibe-calculators-server:3000 {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	handle {
+		reverse_proxy vibe-calculators-client:80
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}
+
+import /etc/caddy/snippets/{$VIBE_DEPLOY_MODE}.caddy

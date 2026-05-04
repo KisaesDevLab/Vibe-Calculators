@@ -1,0 +1,11 @@
+# LAN mode: serve HTTP on :80 inside the firm network. No TLS.
+#
+# Use this when the appliance sits behind an organization-managed
+# firewall and clients reach it by hostname or IP within the LAN.
+#
+# Note: an explicit-port listener like :80 doesn't trigger Caddy's
+# automatic HTTPS, so no auto_https override is needed here.
+
+:80 {
+	import vibe_routes
+}

@@ -1,0 +1,47 @@
+{
+  "name": "vibe-calculators",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Self-hosted Docker appliance providing TValue-grade TVM calculations and a tax-advisory calculator suite for CPA firms.",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "packageManager": "pnpm@9.15.9",
+  "scripts": {
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "lint:root": "eslint . --max-warnings=0",
+    "test": "pnpm -r test",
+    "build": "pnpm -r build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepare": "simple-git-hooks"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "pnpm exec lint-staged"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,mts,cts}": [
+      "eslint --max-warnings=0 --fix",
+      "prettier --write"
+    ],
+    "*.{js,jsx,mjs,cjs,json,yaml,yml,md,css}": [
+      "prettier --write"
+    ]
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.4",
+    "@types/node": "20.14.10",
+    "@typescript-eslint/eslint-plugin": "8.55.0",
+    "@typescript-eslint/parser": "8.55.0",
+    "eslint": "9.39.4",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-import": "2.32.0",
+    "globals": "15.15.0",
+    "lint-staged": "15.5.2",
+    "prettier": "3.3.3",
+    "simple-git-hooks": "2.13.1",
+    "typescript": "5.5.4"
+  }
+}

@@ -1,0 +1,13 @@
+# Domain mode: public hostname with automatic HTTPS via ACME
+# (Let's Encrypt by default). VIBE_DOMAIN must be set; VIBE_TLS_EMAIL
+# is recommended for cert-expiry notifications.
+
+{$VIBE_DOMAIN} {
+	tls {$VIBE_TLS_EMAIL}
+	import vibe_routes
+}
+
+# Redirect plain HTTP to HTTPS for any host.
+:80 {
+	redir https://{host}{uri} permanent
+}

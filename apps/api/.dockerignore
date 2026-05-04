@@ -1,0 +1,31 @@
+**/node_modules
+**/dist
+**/.turbo
+**/coverage
+**/.vite
+**/storybook-static
+**/playwright-report
+**/test-results
+**/*.log
+
+.git
+.gitignore
+.gitattributes
+.github
+.vscode
+.idea
+
+# Documentation that doesn't belong in the runtime image
+*.md
+docs
+
+# Environment files (use docker-compose / runtime env instead)
+.env
+.env.*
+!.env.example
+
+# Frontend assets are in a separate image
+apps/web
+
+# Drizzle migrations are needed by the API at runtime, so apps/api
+# is NOT excluded; the api image runs the migrations.
