@@ -446,7 +446,28 @@ Once you've verified the three points above, reply with sign-off and the autopil
 
 ## Phase 20 — Client / engagement workspace + tagging + search
 
-- **Status:** ⏳ NOT STARTED
+- **Status:** ✅ COMPLETE
+- **Started:** 2026-05-04
+- **Finished:** 2026-05-04
+- **Sign-off:** human-gating skipped per session directive; user confirmed full-phase scope (no deferrals).
+- **Goal:** "every calc lives in a structured workspace, not an OS folder."
+- **Acceptance:** all 7 sub-items shipped end-to-end with API + UI + integration tests.
+
+### Items landed
+
+- [x] 20.1 Clients index — searchable (name + EIN), filterable by entity type + archived, sortable, "New client" inline wizard.
+- [x] 20.2 Client detail — engagements grouped by tax year, recent calculations table, contact card, tags sidebar.
+- [x] 20.3 Engagement detail — status workflow buttons (draft → in_review → approved → closed) with reviewer-gating; calculations grouped by kind; bulk-select for archive; assignment summary.
+- [x] 20.4 Tagging — free-form `<TagInput>` with autocomplete drawn from firm-wide pool; create-on-Enter; bulk-attach endpoint for cross-entity tagging.
+- [x] 20.5 Global cmd-K — `GET /api/v1/search` substring across client name+EIN, engagement name, calculation name *and* JSONB inputs (`inputs_json::text ILIKE`); 150 ms debounce on the client; navigates to entity detail on select.
+- [x] 20.6 My-queue dashboard — `/queue` page with three columns (drafts / in review / approved), SLA-flag banner for engagements in_review > 3 days, calculations-pending-review list.
+- [x] 20.7 Bulk actions — `/api/v1/bulk/calculations/{archive,restore,change-tax-year}` and `/api/v1/bulk/engagements/reassign`; UI surfaces archive in engagement detail.
+
+### Verification
+
+- 6 new integration tests cover every flow (admin + readonly + reviewer roles); state-machine illegal transitions return 409.
+- 105 total API tests pass; monorepo `pnpm -r typecheck` + `pnpm -r lint` green.
+- cmd-K finds calculations by JSONB input substring (e.g. searching "282391" surfaces a calc whose inputs include that loan amount).
 
 ## Phase 21 — Versioning, audit trail, reviewer/preparer workflow
 

@@ -1,8 +1,9 @@
 import { Command } from "cmdk";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useUiStore } from "@/store/ui";
 import { useAuth } from "@/auth/AuthContext";
+import { workspaceApi, type SearchHit } from "@/workspace/api";
 import "./command-palette.css";
 
 /**
@@ -59,6 +60,13 @@ const ACTIONS: PaletteAction[] = [
     permission: "user:list",
     run: (n) => n("/admin/users"),
   },
+  {
+    id: "go.queue",
+    title: "Go: My queue",
+    hint: "/queue",
+    permission: "engagement:read",
+    run: (n) => n("/queue"),
+  },
   { id: "go.profile", title: "Go: Your Profile", hint: "/me", run: (n) => n("/me") },
 ];
 
@@ -67,6 +75,8 @@ export function CommandPalette(): JSX.Element {
   const closePalette = useUiStore((s) => s.closeCommandPalette);
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
+  const [query, setQuery] = useState("");
+  const [hits, setHits] = useState<SearchHit[]>([]);
 
   const visible = ACTIONS.filter((a) => !a.permission || hasPermission(a.permission as never));
 
@@ -83,6 +93,29 @@ export function CommandPalette(): JSX.Element {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, closePalette]);
 
+  useEffect(() => {
+    if (!open) {
+      setQuery("");
+      setHits([]);
+      return;
+    }
+    const q = query.trim();
+    if (q.length < 2) {
+      setHits([]);
+      return;
+    }
+    let cancelled = false;
+    const handle = window.setTimeout(() => {
+      void workspaceApi.search(q).then((r) => {
+        if (!cancelled) setHits(r.hits);
+      });
+    }, 150);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [query, open]);
+
   if (!open) return <></>;
 
   return (
@@ -97,34 +130,82 @@ export function CommandPalette(): JSX.Element {
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-lg overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl"
       >
-        <Command className="vibecalc-cmdk">
+        <Command className="vibecalc-cmdk" shouldFilter={query.length === 0}>
           <Command.Input
             autoFocus
-            placeholder="Search or jump…"
+            value={query}
+            onValueChange={setQuery}
+            placeholder="Search clients, engagements, calcs… or jump"
             className="h-12 w-full border-b border-border bg-transparent px-4 text-sm focus:outline-none"
           />
-          <Command.List className="max-h-80 overflow-auto p-2">
-            <Command.Empty className="px-4 py-6 text-center text-sm text-muted-foreground">
-              No matches.
-            </Command.Empty>
-            <Command.Group heading="Navigate">
-              {visible.map((a) => (
-                <Command.Item
-                  key={a.id}
-                  value={`${a.title} ${a.hint ?? ""}`}
-                  onSelect={() => {
-                    a.run(navigate);
-                    closePalette();
-                  }}
-                  className="flex cursor-pointer items-center justify-between rounded-md px-3 py-2 text-sm aria-selected:bg-accent aria-selected:text-accent-foreground"
-                >
-                  <span>{a.title}</span>
-                  {a.hint && (
-                    <span className="font-mono text-xs text-muted-foreground">{a.hint}</span>
-                  )}
-                </Command.Item>
-              ))}
-            </Command.Group>
+          <Command.List className="max-h-96 overflow-auto p-2">
+            {query.length < 2 && (
+              <>
+                <Command.Empty className="px-4 py-6 text-center text-sm text-muted-foreground">
+                  No matches.
+                </Command.Empty>
+                <Command.Group heading="Navigate">
+                  {visible.map((a) => (
+                    <Command.Item
+                      key={a.id}
+                      value={`${a.title} ${a.hint ?? ""}`}
+                      onSelect={() => {
+                        a.run(navigate);
+                        closePalette();
+                      }}
+                      className="flex cursor-pointer items-center justify-between rounded-md px-3 py-2 text-sm aria-selected:bg-accent aria-selected:text-accent-foreground"
+                    >
+                      <span>{a.title}</span>
+                      {a.hint && (
+                        <span className="font-mono text-xs text-muted-foreground">{a.hint}</span>
+                      )}
+                    </Command.Item>
+                  ))}
+                </Command.Group>
+              </>
+            )}
+            {query.length >= 2 && (
+              <>
+                {hits.length === 0 && (
+                  <Command.Empty className="px-4 py-6 text-center text-sm text-muted-foreground">
+                    Searching…
+                  </Command.Empty>
+                )}
+                {(["client", "engagement", "calculation"] as const).map((kind) => {
+                  const bucket = hits.filter((h) => h.kind === kind);
+                  if (bucket.length === 0) return null;
+                  return (
+                    <Command.Group key={kind} heading={`${kind}s`}>
+                      {bucket.map((h) => (
+                        <Command.Item
+                          key={`${h.kind}:${h.id}`}
+                          value={`${h.kind} ${h.title} ${h.subtitle}`}
+                          onSelect={() => {
+                            const path =
+                              h.kind === "client"
+                                ? `/clients/${h.id}`
+                                : h.kind === "engagement"
+                                  ? `/engagements/${h.id}`
+                                  : "/calculators";
+                            navigate(path);
+                            closePalette();
+                          }}
+                          className="flex cursor-pointer items-center justify-between gap-3 rounded-md px-3 py-2 text-sm aria-selected:bg-accent aria-selected:text-accent-foreground"
+                        >
+                          <div>
+                            <div>{h.title}</div>
+                            <div className="text-xs text-muted-foreground">{h.subtitle}</div>
+                          </div>
+                          <span className="font-mono text-[10px] uppercase text-muted-foreground">
+                            {h.kind}
+                          </span>
+                        </Command.Item>
+                      ))}
+                    </Command.Group>
+                  );
+                })}
+              </>
+            )}
           </Command.List>
         </Command>
       </div>
