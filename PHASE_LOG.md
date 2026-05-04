@@ -42,6 +42,15 @@ Status legend: `⏳ NOT STARTED`, `🚧 IN PROGRESS`, `🛑 BLOCKED (awaiting hu
   3. `pnpm deploy --legacy` is a pnpm 10 flag; pnpm 9.15 rejects it → dropped, kept `--prod`.
   4. Distroless `node` lives at `/nodejs/bin/node`, not on PATH → healthcheck uses the absolute path.
   5. `handle_path /api/*` stripped the prefix; the API mounts `/api/health` → switched to `handle /api/*` which preserves the path.
+- `90a9505` fix(infra): align with Vibe-Appliance port + naming conventions. Initial phase-01 work picked container names, image tags, ports, DB identifiers, and redis slots independently, which would have collided with other Vibe apps on a shared appliance host. Reconciled against `Vibe-Appliance/docs/addenda/emergency-access.md §3` and the existing `console/manifests/`. Final allocation:
+  - **emergencyPort:** 5174 (finance cluster — 5171 mybooks, 5172 tb, 5173 reserved-around-Vite, 5174 calculators, 5175–5180 future finance apps)
+  - **internal ports:** server 3000, client 80
+  - **container_name:** `vibe-calculators-{server,client,postgres,redis,caddy}`
+  - **image:** `ghcr.io/kisaesdevlab/vibe-calculators-{server,client}`
+  - **database:** `vibe_calculators_db` / user `vibecalculators`
+  - **redis db:** 2 (next free after 0 tb, 1 mybooks, 3 tax-research, 4 payroll, 5 glm-ocr)
+  - **subdomain:** `calc`
+  - Added `.appliance/manifest.json` (schema-1) so the Vibe-Appliance host can register and route to this app without code changes. Re-ran the end-to-end test with the renamed stack — all five containers Healthy, `/api/health` and `/health` both return as expected.
 
 ### Phase-exit verification (autopilot)
 
