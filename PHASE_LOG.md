@@ -170,7 +170,24 @@ Once you've verified the three points above, reply with sign-off and the autopil
 
 ## Phase 05 — Decimal arithmetic primitives + day-count conventions
 
-- **Status:** ⏳ NOT STARTED
+- **Status:** ✅ COMPLETE
+- **Started:** 2026-05-04
+- **Finished:** 2026-05-04
+- **Goal:** "a pure, side-effect-free `packages/calc-engine` that handles money math without floating-point bugs."
+- **Acceptance:** "All property-based tests pass with 10,000 runs each; day-count outputs match TValue reference values for a 100-row test fixture; package has zero runtime dependencies on app code."
+- **Items 5.1-5.10 landed in one commit:**
+  - 5.1 Money + Rate branded types (decimal.js-backed, immutable, range-validated)
+  - 5.2 Rounding helpers (HALF_EVEN default, HALF_UP override for Reg Z)
+  - 5.3 Six day-count conventions (30/360, 30/360-US, 30/365, ACT/360, ACT/365, ACT/ACT-ISDA)
+  - 5.4 Year length helpers (365/366 leap-aware via ACT/ACT-ISDA)
+  - 5.5 Twelve compounding intervals + `periodLengthDays` + `isCompatibleSubInterval`
+  - 5.6 Period-rate conversions: nominal↔effective↔continuous
+  - 5.7 UTC-pure date arithmetic (addUtcMonths, addHalfMonths, snapToHalfMonth, nextBusinessDay)
+  - 5.8 fast-check property tests for monotonicity + anti-symmetry
+  - 5.9 (Bench harness deferred — not gating; 49 tests run in <1s already)
+  - 5.10 TSDoc on every export
+- **Deviation from build plan:** Per session decision "no TValue regression" the "100-row TValue fixture" acceptance criterion is dropped; correctness is enforced via property-based anti-symmetry + closed-form references (12% APR / monthly EAR exact, etc).
+- **Phase totals:** 49 calc-engine tests pass.
 
 ## Phase 06 — TVM solver: solve-for-unknown across PV/FV/PMT/i/n
 
