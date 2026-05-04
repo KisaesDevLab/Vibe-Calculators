@@ -223,7 +223,13 @@ Once you've verified the three points above, reply with sign-off and the autopil
 
 ## Phase 08 — APR / Reg Z / Truth-in-Lending output
 
-- **Status:** ⏳ NOT STARTED
+- **Status:** ✅ COMPLETE
+- **Started:** 2026-05-04
+- **Finished:** 2026-05-04
+- **Goal:** "regulatory-grade APR computation and disclosure documents."
+- **Items:** 8.1 APR computation via solveForI; 8.2 finance-charge classification; 8.3 Amount Financed identity check; 8.4 RegZDisclosure builder; 8.5 ±0.125% / ±0.25% tolerance verdicts.
+- **Deferred:** 8.6 PDF model-form-H-2 (Phase 13 PDF pipeline), 8.7 commercial-financing variant, 8.8 20-fixture official-commentary regression (dropped per session decision).
+- **Phase totals:** 94 calc-engine tests pass (86 → 94).
 
 ## Phase 09 — Specialized TVM templates
 
