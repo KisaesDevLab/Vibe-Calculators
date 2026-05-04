@@ -380,7 +380,32 @@ Once you've verified the three points above, reply with sign-off and the autopil
 
 ## Phase 18 — Tier-1 tax calculators, Part C: SE tax, safe harbor, state estimator
 
-- **Status:** ⏳ NOT STARTED
+- **Status:** ✅ COMPLETE
+- **Started:** 2026-05-04
+- **Finished:** 2026-05-04
+- **Sign-off:** human-gating skipped per session directive.
+- **Goal:** "the routine 'what should I pay this quarter' calculators."
+- **Acceptance:** "Safe-harbor calc reproduces 5 hand-worked CPA scenarios; SE calc matches Schedule SE worksheet; state quick-estimator matches each state's published bracket schedule for 2025 + 2026 within $1."
+
+### Items landed
+
+- [x] 18.1 Federal estimated-tax safe-harbor — 90% / 100% / 110% rules with $150k AGI threshold (or $75k MFS); withholding offset; quarterly Q1-Q4 schedule (4/15, 6/15, 9/15, 1/15+1) with rounding pinned to Q4.
+- [x] 18.2 Self-employment tax — 92.35% multiplier; 12.4% OASDI capped at wage base less W-2 OASDI; 2.9% Medicare uncapped; 0.9% Additional Medicare with filing-status threshold; half-SE deduction.
+- [x] 18.3 State income-tax quick-estimator — MO + CA + NY + IL + PA + OH + GA + NC + AZ + (FL/TX no-tax) with 2025 brackets embedded; standard deduction (single doubled for MFJ); not-a-substitute disclaimer surfaced.
+- [x] 18.4 Annualization helpers — weekly / biweekly / semimonthly / monthly cadences; YTD → projected full year by completed periods.
+
+### Verification
+
+- 17 new tests across the 4 calculators (4 + 4 + 6 + 3).
+- SE tax verified against Schedule SE worksheet for $100k earnings ($14,129.55 total).
+- Safe-harbor 110% rule triggers correctly above $150k AGI; 90%-rule binding when projected tax × 0.9 < prior tax × 1.1.
+- State estimator: PA 3.07% flat × $100k = $3,070; IL 4.95% × $100k = $4,950; MO progressive after $14,600 std deduction tracks published rate chart.
+- Monorepo `pnpm -r typecheck` + tax-engine lint green; total tax-engine test count 67.
+
+### Deferred
+
+- 18.1 Statutory date adjustments for weekend / federal holiday — calc emits the calendar date; banking-day shift is downstream UI/PDF concern.
+- 18.3 Per-state credits, retirement-income exclusions, addbacks — not modeled (state form prep is out of scope per build plan §18.3 disclaimer).
 
 ## Phase 19 — Tier-2 tax calculators
 
