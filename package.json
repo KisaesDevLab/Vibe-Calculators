@@ -1,0 +1,24 @@
+{
+  "name": "vibe-calculators",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Self-hosted Docker appliance providing TValue-grade TVM calculations and a tax-advisory calculator suite for CPA firms.",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "packageManager": "pnpm@9.15.9",
+  "scripts": {
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "build": "pnpm -r build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@types/node": "20.14.10",
+    "prettier": "3.3.3",
+    "typescript": "5.5.4"
+  }
+}
