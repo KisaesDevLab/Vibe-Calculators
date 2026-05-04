@@ -127,11 +127,25 @@ Once you've verified the three points above, reply with sign-off and the autopil
 
 ## Phase 03 — Core domain schema: clients, engagements, calculations
 
-- **Status:** 🚧 IN PROGRESS
+- **Status:** ✅ COMPLETE
 - **Started:** 2026-05-04
-- **Branch:** phase/03-domain-schema
+- **Finished:** 2026-05-04
+- **Branch:** phase/03-domain-schema (to be merged)
+- **Sign-off:** human-gating skipped per session directive.
 - **Goal:** "the data model that every calculator writes into."
-- **Acceptance:** "Drizzle types compile cleanly; full-text search query returns expected hits across name + inputs payload; archive/unarchive round-trips correctly."
+- **Acceptance:** verified by `apps/api/src/test/domain.integration.test.ts` (9 pglite-backed integration tests). Drizzle types compile, FTS hits names + inputs payload, archive/unarchive round-trips.
+- **Items (all in commit `<Phase 03 commit>`):**
+  - [x] 3.1 clients schema with entity_type enum (11 kinds), address/contact jsonb, soft-delete
+  - [x] 3.2 engagements schema with status (draft/in_review/approved/closed) + engagement_type enums + assigned preparer/reviewer
+  - [x] 3.3 calculations schema with 30-entry kind enum spanning every TVM and tax kind from the build plan
+  - [x] 3.4 calculation_versions immutable history with row_annotations + locked_at/by
+  - [x] 3.5 polymorphic tags + entity_tags edge across client/engagement/calculation
+  - [x] 3.6 Postgres FTS via tsvector generated columns + GIN indexes (clients indexes name+ein, calculations indexes name + inputs_json::text)
+  - [x] 3.7 drizzle-orm relations() across the entire domain
+  - [x] 3.8 notArchived(col) helper used in app-side queries
+  - [x] 3.9 DB-level CHECKs: email format, ein format, tax_year range, version positivity
+  - [x] 3.10 idempotent seed: 1 user, 3 clients, 6 engagements, 4 calculations
+- **Phase totals:** 164 runtime tests pass (api 102 incl. 9 phase-3 integration tests; db 44 incl. 17 phase-3 schema tests; shared-types 12; web 6).
 
 ## Phase 04 — Frontend shell, design system, navigation
 
