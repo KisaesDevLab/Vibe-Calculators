@@ -16,3 +16,7 @@ import "./calculators/rmd.js";
 import "./calculators/roth-conversion.js";
 import "./calculators/capital-gains.js";
 import "./calculators/qbi.js";
+import "./calculators/se-tax.js";
+import "./calculators/safe-harbor.js";
+import "./calculators/state-tax.js";
+import "./calculators/annualization.js";
