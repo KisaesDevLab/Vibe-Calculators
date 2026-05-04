@@ -191,7 +191,23 @@ Once you've verified the three points above, reply with sign-off and the autopil
 
 ## Phase 06 — TVM solver: solve-for-unknown across PV/FV/PMT/i/n
 
-- **Status:** ⏳ NOT STARTED
+- **Status:** ✅ COMPLETE
+- **Started:** 2026-05-04
+- **Finished:** 2026-05-04
+- **Goal:** "reproducible 'U' toggle on every TVM field."
+- **Acceptance:** algebraic round-trip identity + property-based fast-check coverage. Per session decision "no TValue regression" the §6.9 30-fixture cents-level suite is dropped.
+- **Items:**
+  - [x] 6.1 Canonical TVM equation, sign convention (cash inflows positive)
+  - [x] 6.2 Closed-form solveForPV / FV / PMT / N (with i=0 branch + annuity-due)
+  - [x] 6.3 Iterative solveForI (Newton-Raphson + Brent's fallback) — 1e-10 tolerance, max 50 iterations
+  - [x] 6.4 Annuity-due (type=1) handled in every solver
+  - [ ] 6.5 Solve-for-balloon — deferred to Phase 7's cash-flow engine
+  - [ ] 6.6 Solve-for-down-payment — deferred to Phase 7
+  - [ ] 6.7 Weighted-unknowns mode — deferred to Phase 7
+  - [x] 6.8 Numerical guard rails (diverged / ill-conditioned / sign-error / max-iterations)
+  - [ ] 6.9 30-scenario TValue regression — dropped per session decision
+  - [x] 6.10 Performance: <50ms per solveForI (typically ~5ms)
+- **Phase totals:** 62 calc-engine tests pass (49 Phase 5 + 13 new TVM solver tests).
 
 ## Phase 07 — Cash-flow event model + amortization engine
 
