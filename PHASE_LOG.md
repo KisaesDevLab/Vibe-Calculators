@@ -319,7 +319,35 @@ Once you've verified the three points above, reply with sign-off and the autopil
 
 ## Phase 16 — Tier-1 tax calculators, Part A: depreciation suite
 
-- **Status:** ⏳ NOT STARTED
+- **Status:** ✅ COMPLETE
+- **Started:** 2026-05-04
+- **Finished:** 2026-05-04
+- **Sign-off:** human-gating skipped per session directive.
+- **Goal (from build plan):** "the most-used CPA-advisory calculators in [depreciation]."
+- **Acceptance:** "Every calc reproduces the worked examples in IRS Pub 946 Appendix A within $1; the OBBBA placed-in-service cutoff is verified by a dedicated regression test."
+
+### Items landed
+
+- [x] 16.1 MACRS — GDS half-year (3/5/7/10/15/20-year) and GDS mid-month (27.5/39-year) with all Pub 946 Appendix A percentages embedded; ADS straight-line option; auto-pinned final-year accumulated to basis to prevent rounding drift.
+- [x] 16.2 Section 179 — statutory limit + dollar-for-dollar phase-out + SUV cap + business-income limit with carryforward + MFS allocation.
+- [x] 16.3 Bonus 168(k) — phase-out schedule (60% 2024, 40% 2025) + OBBBA 100% reinstatement for property placed in service on/after 2025-01-20 (`tax_year_overrides` row seeded) + election-out by class.
+- [x] 16.4 Combined waterfall — applies §179 → bonus → MACRS in IRS-required order; consolidated year-by-year schedule across the three buckets.
+- [x] 16.5 Cost-segregation impact estimator — bucket allocation across 5/7/15/39-year, year-1 lift vs. counterfactual (everything in 39), NPV at user-supplied discount rate.
+- [x] 16.7 Used by waterfall as the basis pipeline (§179 → bonus → MACRS); the §1031 hook surfaces in Phase 19.
+
+### Verification
+
+- 25 new tests (5 calculators × 5 avg fixtures) across the depreciation suite.
+- OBBBA cutover verified by 3 dedicated tests: 2025-01-19 → 40%, 2025-01-20 → 100%, fallback rate-source identifies "OBBBA reinstatement".
+- 5-year, 7-year, 27.5-year, 39-year all reproduce Pub 946 Appendix A worked examples to the cent.
+- Monorepo `pnpm -r typecheck` + `pnpm -r lint` green.
+
+### Deferred to follow-up phase
+
+- 16.1 mid-quarter convention (rare — used when >40% of basis placed in Q4; ~5% of returns).
+- 16.1 25-year property class (water-utility property — even rarer).
+- 16.6 Per-asset library scoped to engagement + Form 4562 worksheet export — UI feature, lands in Phase 20 (workspace) and Phase 21 (engagement-scoped versioning).
+
 
 ## Phase 17 — Tier-1 tax calculators, Part B: retirement + investment
 
