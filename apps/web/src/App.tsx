@@ -23,10 +23,17 @@ const AdminUsersPage = lazy(() =>
 const WorkbenchPage = lazy(() =>
   import("@/pages/Workbench").then((m) => ({ default: m.WorkbenchPage })),
 );
-const ClientsStub = lazy(() => import("@/pages/stubs").then((m) => ({ default: m.ClientsStub })));
-const EngagementsStub = lazy(() =>
-  import("@/pages/stubs").then((m) => ({ default: m.EngagementsStub })),
+const ClientsPage = lazy(() => import("@/pages/Clients").then((m) => ({ default: m.ClientsPage })));
+const ClientDetailPage = lazy(() =>
+  import("@/pages/ClientDetail").then((m) => ({ default: m.ClientDetailPage })),
 );
+const EngagementsPage = lazy(() =>
+  import("@/pages/Engagements").then((m) => ({ default: m.EngagementsPage })),
+);
+const EngagementDetailPage = lazy(() =>
+  import("@/pages/EngagementDetail").then((m) => ({ default: m.EngagementDetailPage })),
+);
+const MyQueuePage = lazy(() => import("@/pages/MyQueue").then((m) => ({ default: m.MyQueuePage })));
 const ReportsStub = lazy(() => import("@/pages/stubs").then((m) => ({ default: m.ReportsStub })));
 
 // Phase 4.7 — TanStack Query defaults per CLAUDE.md.
@@ -96,7 +103,19 @@ export function App(): JSX.Element {
                     <RequirePerm perm="client:read">
                       <ShelledRoute>
                         <Suspense fallback={<RouteSpinner />}>
-                          <ClientsStub />
+                          <ClientsPage />
+                        </Suspense>
+                      </ShelledRoute>
+                    </RequirePerm>
+                  }
+                />
+                <Route
+                  path="/clients/:id"
+                  element={
+                    <RequirePerm perm="client:read">
+                      <ShelledRoute>
+                        <Suspense fallback={<RouteSpinner />}>
+                          <ClientDetailPage />
                         </Suspense>
                       </ShelledRoute>
                     </RequirePerm>
@@ -108,7 +127,31 @@ export function App(): JSX.Element {
                     <RequirePerm perm="engagement:read">
                       <ShelledRoute>
                         <Suspense fallback={<RouteSpinner />}>
-                          <EngagementsStub />
+                          <EngagementsPage />
+                        </Suspense>
+                      </ShelledRoute>
+                    </RequirePerm>
+                  }
+                />
+                <Route
+                  path="/engagements/:id"
+                  element={
+                    <RequirePerm perm="engagement:read">
+                      <ShelledRoute>
+                        <Suspense fallback={<RouteSpinner />}>
+                          <EngagementDetailPage />
+                        </Suspense>
+                      </ShelledRoute>
+                    </RequirePerm>
+                  }
+                />
+                <Route
+                  path="/queue"
+                  element={
+                    <RequirePerm perm="engagement:read">
+                      <ShelledRoute>
+                        <Suspense fallback={<RouteSpinner />}>
+                          <MyQueuePage />
                         </Suspense>
                       </ShelledRoute>
                     </RequirePerm>

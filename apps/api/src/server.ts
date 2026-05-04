@@ -6,6 +6,13 @@ import { buildAuthRouter, type AuthRouteDeps } from "./routes/auth.js";
 import { buildSetupRouter, type SetupRouteDeps } from "./routes/setup.js";
 import { buildMeRouter, type MeRouteDeps } from "./routes/me.js";
 import { buildAdminUsersRouter, type AdminUserRouteDeps } from "./routes/admin-users.js";
+import { buildClientsRouter, type ClientRouteDeps } from "./routes/clients.js";
+import { buildEngagementsRouter, type EngagementRouteDeps } from "./routes/engagements.js";
+import { buildCalculationsRouter, type CalculationRouteDeps } from "./routes/calculations.js";
+import { buildTagsRouter, type TagsRouteDeps } from "./routes/tags.js";
+import { buildSearchRouter, type SearchRouteDeps } from "./routes/search.js";
+import { buildQueueRouter, type QueueRouteDeps } from "./routes/queue.js";
+import { buildBulkRouter, type BulkRouteDeps } from "./routes/bulk-actions.js";
 import { loadSession, type AuthMiddlewareOptions } from "./middleware/auth.js";
 
 export interface ServerOptions {
@@ -13,7 +20,17 @@ export interface ServerOptions {
   /** When set, the server wires every auth-aware route. */
   auth?: {
     middleware: AuthMiddlewareOptions;
-    routes: AuthRouteDeps & SetupRouteDeps & MeRouteDeps & AdminUserRouteDeps;
+    routes: AuthRouteDeps &
+      SetupRouteDeps &
+      MeRouteDeps &
+      AdminUserRouteDeps &
+      ClientRouteDeps &
+      EngagementRouteDeps &
+      CalculationRouteDeps &
+      TagsRouteDeps &
+      SearchRouteDeps &
+      QueueRouteDeps &
+      BulkRouteDeps;
   };
 }
 
@@ -39,6 +56,13 @@ export function createApp(options: ServerOptions = {}): Express {
     app.use("/api/v1/auth", buildAuthRouter(options.auth.routes));
     app.use("/api/v1/me", buildMeRouter(options.auth.routes));
     app.use("/api/v1/admin/users", buildAdminUsersRouter(options.auth.routes));
+    app.use("/api/v1/clients", buildClientsRouter(options.auth.routes));
+    app.use("/api/v1/engagements", buildEngagementsRouter(options.auth.routes));
+    app.use("/api/v1/calculations", buildCalculationsRouter(options.auth.routes));
+    app.use("/api/v1/tags", buildTagsRouter(options.auth.routes));
+    app.use("/api/v1/search", buildSearchRouter(options.auth.routes));
+    app.use("/api/v1/queue", buildQueueRouter(options.auth.routes));
+    app.use("/api/v1/bulk", buildBulkRouter(options.auth.routes));
   }
 
   return app;

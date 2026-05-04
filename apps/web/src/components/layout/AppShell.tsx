@@ -10,6 +10,7 @@ import {
   Sun,
   Moon,
   Monitor,
+  Inbox,
 } from "lucide-react";
 import { useAuth } from "@/auth/AuthContext";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -36,6 +37,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
+  { to: "/queue", label: "My queue", icon: Inbox, permission: "engagement:read" },
   { to: "/calculators", label: "Calculators", icon: Calculator },
   { to: "/clients", label: "Clients", icon: Users, permission: "client:read" },
   { to: "/engagements", label: "Engagements", icon: FolderOpen, permission: "engagement:read" },
