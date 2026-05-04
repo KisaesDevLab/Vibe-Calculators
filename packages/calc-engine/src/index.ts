@@ -29,3 +29,4 @@ export * from "./tvm-solver.js";
 export * from "./cashflow-events.js";
 export * from "./cashflow-schedule.js";
 export * from "./cashflow-extensions.js";
+export * from "./reg-z.js";
