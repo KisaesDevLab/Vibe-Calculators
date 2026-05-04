@@ -501,7 +501,40 @@ Once you've verified the three points above, reply with sign-off and the autopil
 
 ## Phase 22 — Saved calc scheduling, AFR auto-update, email delivery
 
-- **Status:** ⏳ NOT STARTED
+- **Status:** ✅ COMPLETE
+- **Started:** 2026-05-04
+- **Finished:** 2026-05-04
+- **Sign-off:** human-gating skipped per session directive; user confirmed three-provider email scope (SMTP + Postmark + EmailIt).
+
+### Items landed
+
+- [x] 22.1 Scheduled re-run engine — `nextRunAt(cadence, from)` advances by daily/weekly/monthly/quarterly/annually; "once" returns null and the schedule auto-completes.
+- [x] 22.2 AFR auto-update — `syncAfr(db, { fetcher? })` fetches the IRS feed, parses `{shortTermAnnual, midTermAnnual, longTermAnnual}`, and inserts a `tax_year_tables` row with kind `afr_short_mid_long`. Idempotent on re-run.
+- [x] 22.3 Email package `@vibe-calc/email` — `EmailProvider` interface + three impls + factory:
+  - `SmtpProvider` via nodemailer
+  - `PostmarkProvider` via fetch + `X-Postmark-Server-Token`
+  - `EmailItProvider` via fetch + bearer auth
+  - `createEmailProvider({provider, smtp, postmark, emailit})` validates each impl's config via Zod
+  - `createEmailProviderFromEnv(env)` for boot-time wiring
+- [x] 22.4 `schedules` + `schedule_instances` tables (migration 0009); status enums (`active|paused|completed|failed`) and instance statuses (`queued|running|delivered|failed`); 6 indexes.
+- [x] 22.5 Routes: list/create/detail/pause/resume/run-now/delete + admin-only `/tick` endpoint that drains every due schedule.
+
+### Verification
+
+- 5 new integration tests pass:
+  - cadence advancement (all 6 enum values)
+  - create + run-now sends to mock provider with metadata propagation + template substitution
+  - readonly user blocked from create
+  - pause/resume toggles status
+  - AFR sync inserts on first call, no-ops on second
+- 6 unit tests for the email factory: SMTP/Postmark/EmailIt creation + Zod validation rejection + env reader.
+- 115 API tests + 6 email tests = 121 total tests across the api + email surfaces. Monorepo `pnpm -r typecheck` + `pnpm -r lint` green.
+
+### Deferred (not blocking)
+
+- 22.1 BullMQ repeatable-job scheduler — current implementation runs via the admin `/tick` endpoint or external cron; wiring BullMQ adds ops complexity without changing the calculation surface.
+- 22.2 Production AFR feed URL — `VIBE_AFR_FEED_URL` env defaults to a placeholder; firms can point at the IRS Rev. Rul. mirror of their choice.
+- 22.5 Per-recipient delivery preferences (digest vs. immediate) — single-channel send for now.
 
 ## Phase 23 — AI-assisted loan-agreement extraction
 

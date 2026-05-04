@@ -53,9 +53,15 @@ importers:
       '@node-rs/argon2':
         specifier: 2.0.2
         version: 2.0.2
+      '@vibe-calc/calc-engine':
+        specifier: workspace:*
+        version: link:../../packages/calc-engine
       '@vibe-calc/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@vibe-calc/email':
+        specifier: workspace:*
+        version: link:../../packages/email
       '@vibe-calc/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
@@ -279,6 +285,22 @@ importers:
       tsx:
         specifier: 4.19.2
         version: 4.19.2
+      vitest:
+        specifier: 2.1.4
+        version: 2.1.4(@types/node@22.19.17)(jsdom@25.0.1)
+
+  packages/email:
+    dependencies:
+      nodemailer:
+        specifier: 6.9.16
+        version: 6.9.16
+      zod:
+        specifier: 3.23.8
+        version: 3.23.8
+    devDependencies:
+      '@types/nodemailer':
+        specifier: 6.4.17
+        version: 6.4.17
       vitest:
         specifier: 2.1.4
         version: 2.1.4(@types/node@22.19.17)(jsdom@25.0.1)
@@ -1999,6 +2021,9 @@ packages:
 
   '@types/node@22.19.17':
     resolution: {integrity: sha512-wGdMcf+vPYM6jikpS/qhg6WiqSV/OhG+jeeHT/KlVqxYfD40iYJf9/AE1uQxVWFvU7MipKRkRv8NSHiCGgPr8Q==}
+
+  '@types/nodemailer@6.4.17':
+    resolution: {integrity: sha512-I9CCaIp6DTldEg7vyUTZi8+9Vo0hi1/T8gv3C89yk1rSAAzoKQ8H8ki/jBYJSFoH/BisgLP8tkZMlQ91CIquww==}
 
   '@types/pg@8.11.10':
     resolution: {integrity: sha512-LczQUW4dbOQzsH2RQ5qoeJ6qJPdrcM/DcMLoqWQkMLMsq83J5lAX3LXjdkWdpscFy67JSOWDnh7Ny/sPFykmkg==}
@@ -4004,6 +4029,10 @@ packages:
 
   node-releases@2.0.38:
     resolution: {integrity: sha512-3qT/88Y3FbH/Kx4szpQQ4HzUbVrHPKTLVpVocKiLfoYvw9XSGOX2FmD2d6DrXbVYyAQTF2HeF6My8jmzx7/CRw==}
+
+  nodemailer@6.9.16:
+    resolution: {integrity: sha512-psAuZdTIRN08HKVd/E8ObdV6NO7NTBY3KsC30F7M4H1OnmLCUNaS56FpYxyb26zWLSyYF9Ozch9KYHhHegsiOQ==}
+    engines: {node: '>=6.0.0'}
 
   normalize-path@3.0.0:
     resolution: {integrity: sha512-6eZs5Ls3WtCisHWp9S2GUy8dqkpGi4BVSz3GaqiE6ezub0512ESztXUwUB6C6IKbQkY2Pnb/mD4WYojCRwcwLA==}
@@ -6789,6 +6818,10 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
+  '@types/nodemailer@6.4.17':
+    dependencies:
+      '@types/node': 20.14.10
+
   '@types/pg@8.11.10':
     dependencies:
       '@types/node': 20.14.10
@@ -9027,6 +9060,8 @@ snapshots:
       semver: 6.3.1
 
   node-releases@2.0.38: {}
+
+  nodemailer@6.9.16: {}
 
   normalize-path@3.0.0: {}
 
