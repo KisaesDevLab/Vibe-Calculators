@@ -80,6 +80,10 @@ export default [
     },
     rules: {
       ...tseslint.configs.recommended.rules,
+      // TypeScript already enforces "did you import this name?" via its
+      // own analysis; no-undef misfires on type-only references like
+      // `JSX.Element`, `React.FC`, etc.
+      "no-undef": "off",
       "@typescript-eslint/no-unused-vars": [
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },

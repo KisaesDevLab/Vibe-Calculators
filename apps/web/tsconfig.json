@@ -1,12 +1,26 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": "src",
     "outDir": "dist",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
-    "noEmit": true
+    "noEmit": true,
+    "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@vibe-calc/calc-engine": ["../../packages/calc-engine/src/index.ts"],
+      "@vibe-calc/calc-engine/*": ["../../packages/calc-engine/src/*"],
+      "@vibe-calc/tax-engine": ["../../packages/tax-engine/src/index.ts"],
+      "@vibe-calc/tax-engine/*": ["../../packages/tax-engine/src/*"],
+      "@vibe-calc/shared-types": ["../../packages/shared-types/src/index.ts"],
+      "@vibe-calc/shared-types/*": ["../../packages/shared-types/src/*"],
+      "@vibe-calc/db": ["../../packages/db/src/index.ts"],
+      "@vibe-calc/db/*": ["../../packages/db/src/*"],
+      "@vibe-calc/pdf": ["../../packages/pdf/src/index.ts"],
+      "@vibe-calc/pdf/*": ["../../packages/pdf/src/*"]
+    }
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "vite.config.ts", "vitest.config.ts"],
   "references": [{ "path": "../../packages/shared-types" }]
 }
