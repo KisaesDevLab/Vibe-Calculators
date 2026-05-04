@@ -1,0 +1,64 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+.vite/
+.turbo/
+
+# Test / coverage
+coverage/
+.nyc_output/
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+*.swp
+*.swo
+
+# Docker / runtime data
+pgdata/
+redisdata/
+pdf-output/
+data/
+
+# Generated artifacts
+*.pid
+*.seed
+*.pid.lock
+
+# Caches
+.eslintcache
+.stylelintcache
+.cache/
+
+# Drizzle output (generated migrations stay; meta directory is regenerated)
+packages/db/drizzle/meta/
+
+# Storybook
+storybook-static/
+
+# Playwright
+playwright-report/
+test-results/
