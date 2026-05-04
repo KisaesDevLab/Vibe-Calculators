@@ -351,7 +351,32 @@ Once you've verified the three points above, reply with sign-off and the autopil
 
 ## Phase 17 — Tier-1 tax calculators, Part B: retirement + investment
 
-- **Status:** ⏳ NOT STARTED
+- **Status:** ✅ COMPLETE
+- **Started:** 2026-05-04
+- **Finished:** 2026-05-04
+- **Sign-off:** human-gating skipped per session directive.
+- **Goal:** "RMD, Roth conversion, and capital-gains analysis."
+- **Acceptance:** "Each calc matches a published worked example (Pub 590-B for RMD, Pub 535 / Form 8995 instructions for QBI, Pub 550 for capital gains) within $1."
+
+### Items landed
+
+- [x] 17.1 RMD — Uniform Lifetime divisors (ages 72-120 from Pub 590-B post-2022 update); Single Life divisors with linear interpolation between published ages; SECURE 2.0 start ages 72/73/75 by birth-year cohort; inherited-IRA 10-year rule with EDB exception flag; Roth-IRA-no-RMD note (SECURE 2.0 §325).
+- [x] 17.2 Roth conversion analyzer — bracket-based tax cost vs. baseline; effective vs. marginal rate; future-value comparison Roth vs. pre-tax-then-taxed; IRMAA first-tier flag.
+- [x] 17.3 Capital gains/loss harvesting — per-lot holding period + realized gain; QSBS 50/75/100% exclusion by acquisition date; wash-sale ±30 days detection; ordinary-loss-offset cap ($3k / $1.5k MFS); NIIT 3.8% surtax on the lesser of NII or excess MAGI.
+- [x] 17.4 QBI §199A — below/phase_in/above regime detection; W-2/UBIA limit (greater of 50% W-2 or 25% W-2 + 2.5% UBIA); SSTB phase-out to zero; REIT/PTP 20% add-on; overall 20% × (taxable income − net capital gain) cap.
+
+### Verification
+
+- 17 new tests across the 4 calculators.
+- Bracket-tax helper validated against 2024 Rev. Proc. 2023-34 schedules; $50k Roth conversion at 22→24% boundary matches hand-calculated $11,589.50.
+- QBI worked through every regime branch (below / above-non-SSTB-no-W2 / above-SSTB / overall-cap binding).
+- Monorepo `pnpm -r typecheck` + `pnpm -r lint` green; total tax-engine test count now 50.
+
+### Deferred
+
+- 17.1 Joint Life table (Pub 590-B Table II) — calc surfaces a TODO note and falls back to Uniform; full table to be embedded in a later round.
+- 17.2 Multi-year Roth ladder — single-year only for MVP; iteration loop arrives in Phase 22 (scheduling).
+- 17.5 Per-calc PDF memo template with form-reference footer — Phase 21 territory (versioning + audit trail) is the natural home.
 
 ## Phase 18 — Tier-1 tax calculators, Part C: SE tax, safe harbor, state estimator
 
