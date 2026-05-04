@@ -19,5 +19,11 @@
   },
   "devDependencies": {
     "vitest": "2.1.4"
+  },
+  "dependencies": {
+    "@vibe-calc/calc-engine": "workspace:*",
+    "@vibe-calc/db": "workspace:*",
+    "@vibe-calc/shared-types": "workspace:*",
+    "zod": "3.23.8"
   }
 }
