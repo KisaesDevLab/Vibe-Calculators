@@ -62,6 +62,9 @@ importers:
       '@vibe-calc/email':
         specifier: workspace:*
         version: link:../../packages/email
+      '@vibe-calc/llm':
+        specifier: workspace:*
+        version: link:../../packages/llm
       '@vibe-calc/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
@@ -301,6 +304,16 @@ importers:
       '@types/nodemailer':
         specifier: 6.4.17
         version: 6.4.17
+      vitest:
+        specifier: 2.1.4
+        version: 2.1.4(@types/node@22.19.17)(jsdom@25.0.1)
+
+  packages/llm:
+    dependencies:
+      zod:
+        specifier: 3.23.8
+        version: 3.23.8
+    devDependencies:
       vitest:
         specifier: 2.1.4
         version: 2.1.4(@types/node@22.19.17)(jsdom@25.0.1)
