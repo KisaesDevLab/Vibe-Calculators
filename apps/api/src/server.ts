@@ -16,6 +16,7 @@ import { buildBulkRouter, type BulkRouteDeps } from "./routes/bulk-actions.js";
 import { buildVersioningRouter, type VersioningRouteDeps } from "./routes/versioning.js";
 import { buildAuditRouter, type AuditRouteDeps } from "./routes/audit.js";
 import { buildSchedulesRouter, type ScheduleRouteDeps } from "./routes/schedules.js";
+import { buildExtractionsRouter, type ExtractionRouteDeps } from "./routes/extractions.js";
 import { loadSession, type AuthMiddlewareOptions } from "./middleware/auth.js";
 
 export interface ServerOptions {
@@ -36,7 +37,8 @@ export interface ServerOptions {
       BulkRouteDeps &
       VersioningRouteDeps &
       AuditRouteDeps &
-      ScheduleRouteDeps;
+      ScheduleRouteDeps &
+      ExtractionRouteDeps;
   };
 }
 
@@ -68,6 +70,7 @@ export function createApp(options: ServerOptions = {}): Express {
     app.use("/api/v1/calculations/:id", buildVersioningRouter(options.auth.routes));
     app.use("/api/v1/audit", buildAuditRouter(options.auth.routes));
     app.use("/api/v1/schedules", buildSchedulesRouter(options.auth.routes));
+    app.use("/api/v1/extractions", buildExtractionsRouter(options.auth.routes));
     app.use("/api/v1/tags", buildTagsRouter(options.auth.routes));
     app.use("/api/v1/search", buildSearchRouter(options.auth.routes));
     app.use("/api/v1/queue", buildQueueRouter(options.auth.routes));

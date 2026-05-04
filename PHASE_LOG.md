@@ -538,7 +538,32 @@ Once you've verified the three points above, reply with sign-off and the autopil
 
 ## Phase 23 — AI-assisted loan-agreement extraction
 
-- **Status:** ⏳ NOT STARTED
+- **Status:** ✅ COMPLETE
+- **Started:** 2026-05-04
+- **Finished:** 2026-05-04
+- **Sign-off:** human-gating skipped per session directive; user confirmed Anthropic-API-only scope.
+
+### Items landed
+
+- [x] 23.1 `LlmProvider` interface (`packages/llm`) with `generate(req) → response` carrying tokens / responseId / model / provider for audit.
+- [x] 23.2 `AnthropicProvider` — bare-fetch `/v1/messages` impl with `x-api-key` + tool-use shaping for forced JSON when `responseSchema` is supplied.
+- [x] 23.3 `loanExtractionSchema` — Zod schema for borrower/lender, principal, rate, compounding, term, payment cadence, prepayment penalty, late-fee note, variable-rate clause + per-field confidence.
+- [x] 23.4 `POST /api/v1/extractions` upload (text-in; PDF OCR deferred).
+- [x] 23.5 `POST /api/v1/extractions/:id/run` synchronous LLM call → parse → persist; `failed` status + error_message on parse / API error.
+- [x] 23.6 `GET /api/v1/extractions/:id` returns extraction + flagged-field list.
+- [x] 23.7 Confidence threshold enforced — `flagLowConfidenceFields(extraction, 0.7)` and the run handler always lands at `needs_review` so a human must hit `/approve` before downstream use.
+
+### Verification
+
+- 4 LLM unit tests + 4 API integration tests pass (readonly blocked, run-with-stub sets `needs_review` + flags, approve records reviewer, 503 when no provider).
+- 123 total tests across api + llm + email + tax-engine. Monorepo `pnpm -r typecheck` + `pnpm -r lint` green.
+- Audit events recorded for extraction run (`calculation.create`) + approval (`calculation.approve`).
+
+### Deferred
+
+- 23.4 Native PDF parsing — accept pre-OCRed text for now; a `pdf-parse` step lands in Phase 25.
+- 23.5 BullMQ async queue — extraction is synchronous; firm-scale latency is fine without it.
+- 23.6 Diff-with-source UI — the structured JSON is returned; side-by-side viewer is a UI follow-up.
 
 ## Phase 24 — REST API and webhooks
 

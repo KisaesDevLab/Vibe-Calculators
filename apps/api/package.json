@@ -17,6 +17,7 @@
     "@vibe-calc/calc-engine": "workspace:*",
     "@vibe-calc/db": "workspace:*",
     "@vibe-calc/email": "workspace:*",
+    "@vibe-calc/llm": "workspace:*",
     "@vibe-calc/shared-types": "workspace:*",
     "@zxcvbn-ts/core": "3.0.4",
     "cookie-parser": "1.4.7",

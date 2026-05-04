@@ -23,6 +23,7 @@ export * from "./schema/bootstrap-tokens";
 export * from "./schema/tax-year-tables";
 export * from "./schema/audit-events";
 export * from "./schema/schedules";
+export * from "./schema/extractions";
 
 // Convenience re-export so consumers can pass `db.query.<table>` etc.
 export * as schema from "./schema/index";
