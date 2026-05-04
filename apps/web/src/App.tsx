@@ -12,6 +12,7 @@ import { ErrorBoundary } from "@/components/layout/ErrorBoundary";
 // Eager: small, used on first paint.
 import { LoginPage } from "@/pages/Login";
 import { MagicLinkPage } from "@/pages/MagicLink";
+import { SetupWizardPage } from "@/pages/SetupWizard";
 
 // Phase 4.6 — route-level code splitting. Each authenticated page is
 // split out so the login bundle stays tiny.
@@ -61,6 +62,7 @@ export function App(): JSX.Element {
               <Toaster position="bottom-right" richColors />
               <Routes>
                 <Route path="/" element={<Navigate to="/health" replace />} />
+                <Route path="/setup" element={<SetupWizardPage />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/login/magic" element={<MagicLinkPage />} />
                 <Route
