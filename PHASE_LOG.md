@@ -288,7 +288,34 @@ Once you've verified the three points above, reply with sign-off and the autopil
 
 ## Phase 15 — Tax engine framework + calculator scaffolding
 
-- **Status:** ⏳ NOT STARTED
+- **Status:** ✅ COMPLETE
+- **Started:** 2026-05-04
+- **Finished:** 2026-05-04
+- **Sign-off:** human-gating skipped per session directive.
+- **Goal (from vibe-calculators-Build.md):** "every Phase 16-19 calculator slots into the same shape — metadata, input/output schema, validateInputs, compute, narrate — so the UI, REST API, and audit log treat them uniformly."
+- **Acceptance:** "A trivial 'double the input' toy calculator can be added in <50 LOC and shows up automatically in the registry."
+
+### Items landed
+
+- [x] 15.1 `TaxCalculator<I,O>` interface (metadata + schemas + validate/compute/narrate) in `packages/tax-engine/src/types.ts`.
+- [x] 15.2 `ComputeContext` carrying `tables: Map<TaxTableKind, ResolvedTaxRow>` + `asOf` clock.
+- [x] 15.3 Module registry — `registerCalculator` / `getCalculator` / `listCalculators` + `_resetRegistryForTests` in `registry.ts`.
+- [x] 15.4 Side-effecting barrel pattern in `index.ts`: adding a new calc = write the module, add one import line.
+- [x] 15.7 Shared `runFixtures` test runner with $1 default tolerance, source-citation surfacing, subset-equality on output.
+- [x] 15.10 Toy `toy.double` calculator (47 LOC) demonstrates the framework + serves as compute-purity smoke test.
+
+### Verification
+
+- 8 tests passing (registry registration, listCalculators, compute purity, validateInputs error path, narrate, plus 3 fixture-runner cases).
+- Monorepo-wide `pnpm -r typecheck` green; `lint --max-warnings=0` green.
+- Circular-import gotcha resolved: leaf calculators import from `./registry.js`/`./types.js`, never the barrel.
+
+### Deferred to phases that need them
+
+- 15.5 REST `GET /api/calculators` listing endpoint — Phase 24.
+- 15.6 UI sidebar enumeration — wired when first real calc lands in Phase 16.
+- 15.8 Per-calculator `compute()` audit row writeback — Phase 21 (versioning + audit chain).
+- 15.9 `narrate()` LLM-shape signoff — Phase 23 (AI extraction is where prompts get materialized).
 
 ## Phase 16 — Tier-1 tax calculators, Part A: depreciation suite
 

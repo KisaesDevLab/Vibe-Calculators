@@ -319,6 +319,19 @@ importers:
         version: 2.1.4(@types/node@22.19.17)(jsdom@25.0.1)
 
   packages/tax-engine:
+    dependencies:
+      '@vibe-calc/calc-engine':
+        specifier: workspace:*
+        version: link:../calc-engine
+      '@vibe-calc/db':
+        specifier: workspace:*
+        version: link:../db
+      '@vibe-calc/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
+      zod:
+        specifier: 3.23.8
+        version: 3.23.8
     devDependencies:
       vitest:
         specifier: 2.1.4

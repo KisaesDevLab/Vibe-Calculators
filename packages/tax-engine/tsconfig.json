@@ -6,5 +6,5 @@
     "composite": true
   },
   "include": ["src/**/*"],
-  "references": [{ "path": "../shared-types" }, { "path": "../calc-engine" }]
+  "references": [{ "path": "../shared-types" }, { "path": "../calc-engine" }, { "path": "../db" }]
 }
