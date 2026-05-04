@@ -4,9 +4,6 @@
   "compilerOptions": {
     "noEmit": true
   },
-  "include": [
-    "apps/*/src/**/*",
-    "packages/*/src/**/*"
-  ],
+  "include": ["apps/*/src/**/*", "packages/*/src/**/*"],
   "exclude": ["**/dist/**", "**/node_modules/**"]
 }
