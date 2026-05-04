@@ -1,5 +1,7 @@
 import { useMemo, useState, type ChangeEvent } from "react";
-import { Plus, Trash2, RotateCcw } from "lucide-react";
+import { Plus, Trash2, RotateCcw, Clipboard, Printer } from "lucide-react";
+import { toast } from "sonner";
+import { ScheduleChart, scheduleToTsv, type ChartKind } from "@/components/schedule/ScheduleChart";
 import {
   generateSchedule,
   type CashFlowEventKind,
@@ -232,60 +234,144 @@ export function WorkbenchPage(): JSX.Element {
       </Card>
 
       {/* Result panel */}
-      {schedule && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Schedule</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-              <Stat label="Ending balance" value={schedule.endingBalance.toFixed(2)} />
-              <Stat label="Total interest" value={schedule.totalInterest.toFixed(2)} />
-              <Stat label="Total principal" value={schedule.totalPrincipal.toFixed(2)} />
-              <Stat
-                label="Negative-am"
-                value={schedule.hasNegativeAm ? "Yes" : "No"}
-                emphasis={schedule.hasNegativeAm ? "warn" : "ok"}
-              />
-            </div>
-            <div className="overflow-x-auto rounded-md border border-border">
-              <table className="w-full text-xs font-mono">
-                <thead className="bg-muted/50 text-left">
-                  <tr>
-                    <th className="px-2 py-1">Date</th>
-                    <th className="px-2 py-1">Event</th>
-                    <th className="px-2 py-1 text-right">Opening</th>
-                    <th className="px-2 py-1 text-right">Interest</th>
-                    <th className="px-2 py-1 text-right">Payment</th>
-                    <th className="px-2 py-1 text-right">Principal</th>
-                    <th className="px-2 py-1 text-right">Closing</th>
-                    <th className="px-2 py-1 text-right">Cum. interest</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {schedule.rows.map((r, i) => (
-                    <tr
-                      key={i}
-                      className={cn("border-t border-border", r.negativeAm && "bg-destructive/5")}
-                    >
-                      <td className="px-2 py-1">{r.date.toISOString().slice(0, 10)}</td>
-                      <td className="px-2 py-1">{r.kind}</td>
-                      <td className="px-2 py-1 text-right">{r.opening.toFixed(2)}</td>
-                      <td className="px-2 py-1 text-right">{r.interestAccrued.toFixed(2)}</td>
-                      <td className="px-2 py-1 text-right">{r.paymentApplied.toFixed(2)}</td>
-                      <td className="px-2 py-1 text-right">{r.principalApplied.toFixed(2)}</td>
-                      <td className="px-2 py-1 text-right">{r.closing.toFixed(2)}</td>
-                      <td className="px-2 py-1 text-right">{r.cumulativeInterest.toFixed(2)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {schedule && <ResultPanel schedule={schedule} />}
     </main>
   );
+}
+
+function ResultPanel({ schedule }: { schedule: ScheduleResult }): JSX.Element {
+  const [chart, setChart] = useState<ChartKind>("stacked");
+
+  async function copyTsv(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(scheduleToTsv(schedule));
+      toast.success("Schedule copied to clipboard (TSV).");
+    } catch {
+      toast.error("Could not copy. Browser may have blocked clipboard access.");
+    }
+  }
+
+  return (
+    <Card className="print:shadow-none print:border-0">
+      <CardHeader className="flex flex-row items-center justify-between print:hidden">
+        <CardTitle>Schedule</CardTitle>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => void copyTsv()}>
+            <Clipboard className="h-4 w-4" />
+            Copy TSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => window.print()}>
+            <Printer className="h-4 w-4" />
+            Print
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+          <Stat label="Ending balance" value={schedule.endingBalance.toFixed(2)} />
+          <Stat label="Total interest" value={schedule.totalInterest.toFixed(2)} />
+          <Stat label="Total principal" value={schedule.totalPrincipal.toFixed(2)} />
+          <Stat
+            label="Negative-am"
+            value={schedule.hasNegativeAm ? "Yes" : "No"}
+            emphasis={schedule.hasNegativeAm ? "warn" : "ok"}
+          />
+        </div>
+
+        <div className="print:hidden">
+          <div className="flex gap-2 border-b border-border pb-2">
+            <ChartTab active={chart === "stacked"} onClick={() => setChart("stacked")}>
+              Principal vs interest
+            </ChartTab>
+            <ChartTab active={chart === "balance"} onClick={() => setChart("balance")}>
+              Balance over time
+            </ChartTab>
+            <ChartTab
+              active={chart === "cumulative-interest"}
+              onClick={() => setChart("cumulative-interest")}
+            >
+              Cumulative interest
+            </ChartTab>
+          </div>
+          <div className="mt-3">
+            <ScheduleChart schedule={schedule} kind={chart} />
+          </div>
+        </div>
+
+        <div className="overflow-x-auto rounded-md border border-border print:overflow-visible print:rounded-none print:border-0">
+          <table className="w-full text-xs font-mono">
+            <thead className="sticky top-0 bg-muted/50 text-left">
+              <tr>
+                <th className="px-2 py-1">Date</th>
+                <th className="px-2 py-1">Event</th>
+                <th className="px-2 py-1 text-right">Opening</th>
+                <th className="px-2 py-1 text-right">Interest</th>
+                <th className="px-2 py-1 text-right">Payment</th>
+                <th className="px-2 py-1 text-right">Principal</th>
+                <th className="px-2 py-1 text-right">Closing</th>
+                <th className="px-2 py-1 text-right">Cum. interest</th>
+                <th className="px-2 py-1">Memo</th>
+              </tr>
+            </thead>
+            <tbody>
+              {schedule.rows.map((r, i) => {
+                const yearEnd = isYearEnd(r.date);
+                return (
+                  <tr
+                    key={i}
+                    className={cn(
+                      "border-t border-border",
+                      r.negativeAm && "bg-destructive/5",
+                      yearEnd && "bg-secondary/40 font-semibold",
+                    )}
+                  >
+                    <td className="px-2 py-1">{r.date.toISOString().slice(0, 10)}</td>
+                    <td className="px-2 py-1">{r.kind}</td>
+                    <td className="px-2 py-1 text-right">{r.opening.toFixed(2)}</td>
+                    <td className="px-2 py-1 text-right">{r.interestAccrued.toFixed(2)}</td>
+                    <td className="px-2 py-1 text-right">{r.paymentApplied.toFixed(2)}</td>
+                    <td className="px-2 py-1 text-right">{r.principalApplied.toFixed(2)}</td>
+                    <td className="px-2 py-1 text-right">{r.closing.toFixed(2)}</td>
+                    <td className="px-2 py-1 text-right">{r.cumulativeInterest.toFixed(2)}</td>
+                    <td className="px-2 py-1 truncate max-w-xs" title={r.memo ?? ""}>
+                      {r.memo ?? ""}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ChartTab({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "rounded-md px-3 py-1 text-xs",
+        active ? "bg-secondary text-secondary-foreground" : "text-muted-foreground hover:bg-accent",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function isYearEnd(date: Date): boolean {
+  return date.getUTCMonth() === 11 && date.getUTCDate() === 31;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {

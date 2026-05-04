@@ -62,3 +62,31 @@
       "calt" 1;
   }
 }
+
+/*
+ * Phase 12.9 — print stylesheet.
+ * The workbench schedule prints clean (no nav rail, no toolbar,
+ * just the calculation header + summary stats + full schedule
+ * table). Selectors marked .print:hidden in the markup are excluded.
+ */
+@media print {
+  aside,
+  header[role="banner"],
+  nav {
+    display: none !important;
+  }
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+  table {
+    page-break-inside: auto;
+  }
+  tr {
+    page-break-inside: avoid;
+  }
+}
