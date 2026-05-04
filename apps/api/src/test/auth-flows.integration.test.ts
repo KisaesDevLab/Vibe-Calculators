@@ -1,14 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
 import { randomBytes } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { recoveryCodes, sessions, users } from "@vibe-calc/db";
 import { TOTP, Secret } from "otpauth";
-import { makeTestDb, type TestDb } from "./db-fixture.js";
+import { makeTestDb, type TestDb, type TestHarness } from "./db-fixture.js";
 import { createApp } from "../server.js";
 import { hashPassword } from "../lib/password.js";
-import { createBootstrapManager } from "../lib/bootstrap.js";
+import { persistBootstrapToken } from "../lib/bootstrap.js";
 import { createKms } from "../lib/kms.js";
 import { sealerFrom } from "../lib/totp.js";
 import { createRateLimiter, memoryStore } from "../lib/rate-limit.js";
@@ -29,21 +29,17 @@ import { SESSION_COOKIE_NAME } from "../lib/cookies.js";
  *   - rate-limit lockout after 5 failed logins
  */
 
-interface Harness {
+interface AppHarness {
   db: TestDb;
-  close: () => Promise<void>;
   app: Express;
   capturedMagicLinks: { email: string; token: string }[];
-  bootstrap: ReturnType<typeof createBootstrapManager>;
 }
 
-async function buildHarness(): Promise<Harness> {
-  const { db, close } = await makeTestDb();
+function buildAppHarness(db: TestDb): AppHarness {
   const captured: { email: string; token: string }[] = [];
   const kms = createKms(randomBytes(32).toString("base64"));
   const totpSealer = sealerFrom(kms);
   const rateLimiter = createRateLimiter(memoryStore());
-  const bootstrap = createBootstrapManager();
   const env = { VIBE_DEPLOY_MODE: "lan" as const };
 
   const app = createApp({
@@ -53,7 +49,6 @@ async function buildHarness(): Promise<Harness> {
         db,
         env,
         rateLimiter,
-        bootstrap,
         totpSealer,
         emitMagicLinkEmail: (input) => {
           captured.push({ email: input.email, token: input.token });
@@ -61,7 +56,7 @@ async function buildHarness(): Promise<Harness> {
       },
     },
   });
-  return { db, close, app, capturedMagicLinks: captured, bootstrap };
+  return { db, app, capturedMagicLinks: captured };
 }
 
 async function seedUser(
@@ -92,12 +87,19 @@ async function loginCookie(db: TestDb, userId: string): Promise<string> {
 }
 
 describe("auth flows — integration", () => {
-  let h: Harness;
-  beforeEach(async () => {
-    h = await buildHarness();
+  let harness: TestHarness;
+  let h: AppHarness;
+
+  beforeAll(async () => {
+    harness = await makeTestDb();
+  }, 60_000);
+  afterAll(async () => {
+    await harness.close();
   });
-  afterEach(async () => {
-    await h.close();
+
+  beforeEach(async () => {
+    await harness.truncateAll();
+    h = buildAppHarness(harness.db);
   });
 
   // ----- Build-plan headline scenario --------------------------------
@@ -213,9 +215,10 @@ describe("auth flows — integration", () => {
   // ----- First-run bootstrap -----------------------------------------
 
   it("bootstrap: zero users → setup token redeems for first admin", async () => {
-    await h.bootstrap.refresh(h.db);
-    expect(h.bootstrap.getState().kind).toBe("open");
-    const token = h.bootstrap.issueToken()!;
+    // Operator generates a token (mimicking `just bootstrap`).
+    const token = randomBytes(32).toString("hex");
+    const persisted = await persistBootstrapToken(h.db, token);
+    expect(persisted.ok).toBe(true);
 
     const r = await request(h.app).post("/api/v1/setup").send({
       token,
@@ -234,6 +237,19 @@ describe("auth flows — integration", () => {
       password: "Trombone-glacier-7!quiet-river2026",
     });
     expect(r2.status).toBe(410);
+  });
+
+  it("bootstrap CLI refuses to issue a token after first user exists", async () => {
+    await seedUser(h.db, {
+      email: "existing@firm.test",
+      name: "Existing",
+      role: "admin",
+      password: "Correct-horse-battery-staple-2026!",
+    });
+    const token = randomBytes(32).toString("hex");
+    const persisted = await persistBootstrapToken(h.db, token);
+    expect(persisted.ok).toBe(false);
+    if (!persisted.ok) expect(persisted.reason).toBe("users-exist");
   });
 
   // ----- Rate limit ---------------------------------------------------

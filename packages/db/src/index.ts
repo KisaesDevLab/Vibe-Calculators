@@ -18,6 +18,7 @@ export * from "./schema/clients";
 export * from "./schema/engagements";
 export * from "./schema/calculations";
 export * from "./schema/tags";
+export * from "./schema/bootstrap-tokens";
 
 // Convenience re-export so consumers can pass `db.query.<table>` etc.
 export * as schema from "./schema/index";

@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { type Database } from "@vibe-calc/db";
-import { createFirstAdmin, type BootstrapManager } from "../lib/bootstrap.js";
+import { createFirstAdmin, isUsersTableEmpty, verifyBootstrapToken } from "../lib/bootstrap.js";
 import { createSession } from "../lib/sessions.js";
 import { setSessionCookie } from "../lib/cookies.js";
 import { permissionsFor } from "@vibe-calc/shared-types";
@@ -11,11 +11,10 @@ import type { Env } from "../lib/env.js";
 export interface SetupRouteDeps {
   db: Database;
   env: Pick<Env, "VIBE_DEPLOY_MODE">;
-  bootstrap: BootstrapManager;
 }
 
 const setupBodySchema = z.object({
-  token: z.string().min(32),
+  token: z.string().regex(/^[0-9a-f]{64}$/),
   email: z.string().email().toLowerCase(),
   name: z.string().min(1),
   password: z.string().min(12),
@@ -25,8 +24,8 @@ export function buildSetupRouter(deps: SetupRouteDeps): Router {
   const router = Router();
 
   router.get("/status", async (_req: Request, res: Response) => {
-    await deps.bootstrap.refresh(deps.db);
-    res.json({ open: deps.bootstrap.getState().kind === "open" });
+    const open = await isUsersTableEmpty(deps.db);
+    res.json({ open });
   });
 
   router.post("/", async (req: Request, res: Response) => {
@@ -34,11 +33,11 @@ export function buildSetupRouter(deps: SetupRouteDeps): Router {
     if (!parsed.success) {
       return problem(res, 400, "Bad request", "Invalid setup body");
     }
-    await deps.bootstrap.refresh(deps.db);
-    if (!deps.bootstrap.verifyToken(parsed.data.token)) {
+    const ok = await verifyBootstrapToken(deps.db, parsed.data.token);
+    if (!ok) {
       return problem(res, 410, "Gone", "Setup is closed or token is invalid");
     }
-    const result = await createFirstAdmin(deps.db, deps.bootstrap, {
+    const result = await createFirstAdmin(deps.db, {
       email: parsed.data.email,
       name: parsed.data.name,
       password: parsed.data.password,
