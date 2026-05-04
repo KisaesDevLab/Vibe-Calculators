@@ -48,9 +48,11 @@ migrate:
         -e DATABASE_URL=postgres://${POSTGRES_USER:-vibe}:${POSTGRES_PASSWORD:-vibe}@postgres:5432/${POSTGRES_DB:-vibecalc} \
         --entrypoint node api /app/node_modules/@vibe-calc/db/dist/migrate.js
 
-# Seed the database with development fixtures (Phase 3.10).
+# Seed the database with development fixtures.
 seed:
-    @echo "Seed script not implemented until Phase 3.10."
+    docker compose run --rm --no-deps \
+        -e DATABASE_URL=postgres://${POSTGRES_USER:-vibecalculators}:${POSTGRES_PASSWORD:-vibecalculators}@postgres:5432/${POSTGRES_DB:-vibe_calculators_db} \
+        --entrypoint node api /app/node_modules/@vibe-calc/db/dist/seed.js
 
 # Drop and re-create the database (DESTRUCTIVE — dev / post-restore only).
 reset-db:

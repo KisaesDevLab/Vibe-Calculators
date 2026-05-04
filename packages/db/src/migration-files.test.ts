@@ -17,6 +17,28 @@ describe("drizzle migrations", () => {
     expect(files).toContain("0001_auth_schema.sql");
   });
 
+  it("includes the 0004_domain_schema and 0005_fts_and_checks migrations", () => {
+    const files = readdirSync(drizzleDir).filter((f) => f.endsWith(".sql"));
+    expect(files).toContain("0004_domain_schema.sql");
+    expect(files).toContain("0005_fts_and_checks.sql");
+  });
+
+  it("FTS migration creates tsvector columns + GIN indexes for the three taggable tables", () => {
+    const sql = readFileSync(join(drizzleDir, "0005_fts_and_checks.sql"), "utf8");
+    for (const t of ["clients", "engagements", "calculations"]) {
+      expect(sql).toMatch(new RegExp(`ALTER TABLE "${t}"\\s+ADD COLUMN "search_doc" tsvector`));
+      expect(sql).toMatch(new RegExp(`"${t}_search_doc_idx" ON "${t}" USING GIN`));
+    }
+  });
+
+  it("CHECK constraints cover email format, ein, tax_year, version positivity", () => {
+    const sql = readFileSync(join(drizzleDir, "0005_fts_and_checks.sql"), "utf8");
+    expect(sql).toMatch(/users_email_format/);
+    expect(sql).toMatch(/clients_ein_format/);
+    expect(sql).toMatch(/engagements_tax_year_range/);
+    expect(sql).toMatch(/calculations_version_positive/);
+  });
+
   it("creates the four phase-2 tables", () => {
     const sql = readFileSync(join(drizzleDir, "0001_auth_schema.sql"), "utf8");
     for (const t of ["users", "sessions", "password_reset_tokens", "magic_link_tokens"]) {

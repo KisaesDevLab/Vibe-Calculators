@@ -5,3 +5,8 @@ export * from "./password-reset-tokens";
 export * from "./magic-link-tokens";
 export * from "./recovery-codes";
 export * from "./auth-events";
+export * from "./clients";
+export * from "./engagements";
+export * from "./calculations";
+export * from "./tags";
+export * from "./relations";
