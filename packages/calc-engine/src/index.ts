@@ -25,3 +25,4 @@ export * from "./day-count.js";
 export * from "./compounding.js";
 export * from "./period-rate.js";
 export * from "./date-arithmetic.js";
+export * from "./tvm-solver.js";
