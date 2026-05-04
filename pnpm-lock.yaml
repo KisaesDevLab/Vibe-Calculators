@@ -156,6 +156,9 @@ importers:
       '@tanstack/react-query':
         specifier: 5.62.0
         version: 5.62.0(react@18.3.1)
+      '@vibe-calc/calc-engine':
+        specifier: workspace:*
+        version: link:../../packages/calc-engine
       '@vibe-calc/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
