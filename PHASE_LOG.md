@@ -259,7 +259,12 @@ Once you've verified the three points above, reply with sign-off and the autopil
 
 ## Phase 12 — Schedule rendering and visualization
 
-- **Status:** ⏳ NOT STARTED
+- **Status:** ✅ COMPLETE
+- **Started:** 2026-05-04
+- **Finished:** 2026-05-04
+- **Items landed:** 12.1 sticky header / aligned columns; 12.2 year-end row tinting; 12.3 negative-am highlighting; 12.4 memo truncation with hover-expand; 12.6 three Recharts visualisations (stacked principal-vs-interest area, balance line, cumulative-interest line); 12.8 Copy-TSV clipboard export; 12.9 print stylesheet hides nav/header/aside.
+- **Deferred:** 12.5 inline annotation persistence (DB write hook); 12.7 'show me the math' tooltip (per-cell formula text); schedule virtualization (only useful >360 rows; deferred until real-world long-loan scenario shows jank).
+- **Phase totals:** 33 web tests still pass; Workbench bundle 494 KB / 138 KB gz lazy-loaded with Recharts.
 
 ## Phase 13 — Reporting / export pipeline (PDF, XLSX, CSV, DOCX)
 
