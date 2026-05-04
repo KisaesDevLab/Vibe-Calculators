@@ -233,11 +233,18 @@ Once you've verified the three points above, reply with sign-off and the autopil
 
 ## Phase 09 — Specialized TVM templates
 
-- **Status:** ⏳ NOT STARTED
+- **Status:** ✅ COMPLETE
+- **Started:** 2026-05-04
+- **Finished:** 2026-05-04
+- **Goal:** "pre-built scenarios that capture 80% of CPA TVM workflow."
+- **Items landed:** 9.1/9.2 covered by Phase 7 generateSchedule; 9.3 priceBond + bondYield; 9.4 asc842LeasePv (ROU + liability); 9.8 sinkingFund; 9.11 npv + irr + mirr.
+- **Deferred:** 9.5 TDR PV; 9.6/9.7 imputed-interest / below-market loan (depend on Phase 22 AFR fetch); 9.9 lease rate factor; 9.10 note buy/sell yield; 9.12 per-template UI forms (land in Phase 11); 9.13 5-fixture-per-template regression (per session decision).
+- **Phase totals:** 107 calc-engine tests (94 → 107).
 
 ## Phase 10 — TValue golden-file regression suite
 
-- **Status:** ⏳ NOT STARTED
+- **Status:** 🚫 DROPPED per session decision "no TValue regression"
+- **Rationale:** the build plan called for byte-for-byte parity with TValue 6 against a 50-scenario fixture suite curated from real `.tv6` files. The user explicitly opted out of that comparison. Phases 6/7/9's correctness is enforced by the algebraic identities, property-based fast-check coverage, and behavioural fixtures already landed.
 
 ## Phase 11 — TVM workbench UI
 
