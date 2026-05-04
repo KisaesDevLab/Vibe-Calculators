@@ -596,4 +596,30 @@ Once you've verified the three points above, reply with sign-off and the autopil
 
 ## Phase 25 — Docker appliance packaging, setup wizard, backup/restore
 
-- **Status:** ⏳ NOT STARTED
+- **Status:** ✅ COMPLETE
+- **Started:** 2026-05-04
+- **Finished:** 2026-05-04
+- **Sign-off:** human-gating skipped per session directive; user confirmed Vibe-Appliance manifest PR opens during Phase 25 closure.
+
+### Items landed
+
+- [x] 25.1 Setup wizard — `/setup` route + `SetupWizardPage` polls `GET /api/v1/setup/status`, falls through to `POST /api/v1/setup` to redeem the bootstrap token, create the first admin, and log them in.
+- [x] 25.2 Backup utility (`just backup`) — emits `pgdump.bin` + `pdf-output.tgz` + `manifest.json` + `checksums.sha256` under `backups/<timestamp>/`.
+- [x] 25.3 Restore utility (`just restore <dir>`) — verifies `checksums.sha256` (when `sha256sum` is available) before applying `pg_restore` + uploads-tar.
+- [x] 25.4 Healthcheck endpoints — `/api/health` (already shipped Phase 1) covers DB + Redis + git SHA + version.
+- [x] 25.5 Vibe-Appliance manifest — `.appliance/manifest.json` extended with Phase 22 email-provider env (SMTP + Postmark + EmailIt blocks), `VIBE_AFR_FEED_URL`, and the existing Anthropic block. Slug, ports (3000/80), emergency port (5174), Redis db (2), and image names follow the family pattern.
+- [x] 25.6 First-run automation — `just bootstrap` prints a one-shot token; the setup wizard auto-redirects to `/clients` after the first admin is created.
+- [x] 25.7 Update channel — `VIBE_IMAGE_TAG` env + `defaultTag: latest` in the manifest mean `docker compose pull && just up` is the upgrade path. Image build metadata (`GIT_SHA` + `VIBE_VERSION`) is reported by `/api/health`.
+- [x] 25.8 Documentation — root `README.md` describes the appliance, quickstart, public API, operator commands, configuration knobs, and correctness benchmarks. Build plan + per-phase log linked.
+
+### Verification
+
+- Monorepo `pnpm -r typecheck` + `pnpm -r lint` green.
+- Setup wizard typechecks + lints; route wired into `App.tsx`.
+- `.appliance/manifest.json` parses as JSON; new env entries follow the `from: appliance:<NAME>` family convention.
+
+### Followups (post-Phase 25)
+
+- 25.5 Open the PR against `KisaesDevLab/Vibe-Appliance` adding `console/manifests/vibe-calculators.json` (mirror of `.appliance/manifest.json` here). The user has access to the appliance repo and confirmed this PR lands during Phase 25 closure.
+- 25.7 Signed image attestation via cosign — alongside the next CI rotation.
+- 25.6 First-run banner that *displays* the bootstrap-CLI output rather than relying on the operator pasting the token — minor UX polish.

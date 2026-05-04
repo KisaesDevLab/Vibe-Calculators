@@ -51,6 +51,32 @@
           "appliance": "both",
           "validate": "anthropic-api-key"
         }
+      },
+      {
+        "name": "VIBE_EMAIL_PROVIDER",
+        "from": "static:smtp",
+        "doc": "Email provider — one of smtp | postmark | emailit (Phase 22)."
+      },
+      { "name": "SMTP_HOST", "from": "appliance:SMTP_HOST" },
+      { "name": "SMTP_PORT", "from": "appliance:SMTP_PORT" },
+      { "name": "SMTP_USER", "from": "appliance:SMTP_USER" },
+      { "name": "SMTP_PASS", "from": "appliance:SMTP_PASS", "secret": true },
+      { "name": "SMTP_SECURE", "from": "appliance:SMTP_SECURE" },
+      { "name": "SMTP_FROM", "from": "appliance:SMTP_FROM" },
+      {
+        "name": "POSTMARK_SERVER_TOKEN",
+        "from": "appliance:POSTMARK_SERVER_TOKEN",
+        "secret": true
+      },
+      { "name": "POSTMARK_FROM", "from": "appliance:POSTMARK_FROM" },
+      { "name": "POSTMARK_STREAM", "from": "static:outbound" },
+      { "name": "EMAILIT_API_KEY", "from": "appliance:EMAILIT_API_KEY", "secret": true },
+      { "name": "EMAILIT_FROM", "from": "appliance:EMAILIT_FROM" },
+      { "name": "EMAILIT_ENDPOINT", "from": "appliance:EMAILIT_ENDPOINT" },
+      {
+        "name": "VIBE_AFR_FEED_URL",
+        "from": "appliance:VIBE_AFR_FEED_URL",
+        "doc": "IRS AFR feed URL (Phase 22.2). Defaults to the appliance-wide value."
       }
     ]
   },

@@ -71,25 +71,50 @@ reset-db:
 # Backup / restore
 # ---------------------------------------------------------------------
 
-# Dump database + uploads to ./backups/<timestamp>/. Phase 25.7 hardens this.
+# Dump database + uploads to ./backups/<timestamp>/.
+# Phase 25.2 — emits manifest.json + sha256 checksums alongside the dump.
 backup:
     #!/usr/bin/env sh
     set -e
     ts=$(date -u +%Y%m%dT%H%M%SZ)
     out="backups/${ts}"
     mkdir -p "${out}"
-    docker compose exec -T postgres pg_dump -U "${POSTGRES_USER:-vibe}" -d "${POSTGRES_DB:-vibecalc}" -Fc \
+    POSTGRES_USER="${POSTGRES_USER:-vibecalculators}"
+    POSTGRES_DB="${POSTGRES_DB:-vibe_calculators_db}"
+    docker compose exec -T postgres pg_dump -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -Fc \
         > "${out}/pgdump.bin"
     docker run --rm -v "$(pwd)/${out}:/out" -v "vibe-calculators_pdf-output:/data" alpine \
         sh -c "tar -C /data -czf /out/pdf-output.tgz ."
+    cat > "${out}/manifest.json" <<EOF
+{
+  "version": "${VIBE_VERSION:-dev}",
+  "createdAt": "${ts}",
+  "postgresUser": "${POSTGRES_USER}",
+  "postgresDb": "${POSTGRES_DB}",
+  "schemaMigration": "0011_api_keys_webhooks"
+}
+EOF
+    if command -v sha256sum >/dev/null 2>&1; then
+        (cd "${out}" && sha256sum pgdump.bin pdf-output.tgz > checksums.sha256)
+    fi
     echo "backup written to ${out}"
 
-# Restore from a backup directory containing pgdump.bin + pdf-output.tgz.
+# Restore from a backup directory. Phase 25.3 — verifies checksums
+# (when sha256sum is available) before applying.
 restore PATH:
-    docker compose exec -T postgres pg_restore -U "${POSTGRES_USER:-vibe}" -d "${POSTGRES_DB:-vibecalc}" --clean --if-exists \
+    #!/usr/bin/env sh
+    set -e
+    POSTGRES_USER="${POSTGRES_USER:-vibecalculators}"
+    POSTGRES_DB="${POSTGRES_DB:-vibe_calculators_db}"
+    if [ -f "{{PATH}}/checksums.sha256" ] && command -v sha256sum >/dev/null 2>&1; then
+        echo "verifying checksums…"
+        (cd "{{PATH}}" && sha256sum -c checksums.sha256)
+    fi
+    docker compose exec -T postgres pg_restore -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" --clean --if-exists \
         < "{{PATH}}/pgdump.bin"
     docker run --rm -v "$(pwd)/{{PATH}}:/in" -v "vibe-calculators_pdf-output:/data" alpine \
         sh -c "rm -rf /data/* && tar -C /data -xzf /in/pdf-output.tgz"
+    echo "restore complete"
 
 # ---------------------------------------------------------------------
 # Debug
