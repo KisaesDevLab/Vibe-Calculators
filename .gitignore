@@ -53,9 +53,6 @@ data/
 .stylelintcache
 .cache/
 
-# Drizzle output (generated migrations stay; meta directory is regenerated)
-packages/db/drizzle/meta/
-
 # Storybook
 storybook-static/
 
