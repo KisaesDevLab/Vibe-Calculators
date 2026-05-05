@@ -73,6 +73,11 @@ interface WorkbenchState {
   rows: GridRow[];
   selectedRowId: string | null;
   loanDetails: LoanDetailsState;
+  /** Set after Save → POST /api/v1/calculations succeeds. Subsequent saves
+   *  go through /calculations/:id/save and create a new immutable version. */
+  currentCalcId: string | null;
+  /** Bumped by each successful Save; informs the Save button label. */
+  currentVersion: number;
 
   // Actions
   setMaster: <K extends keyof MasterUiState>(key: K, value: MasterUiState[K]) => void;
@@ -85,6 +90,7 @@ interface WorkbenchState {
   /** Sort the grid rows in-place by ISO date ascending. Empty dates sink to the bottom. */
   sortByDate: () => void;
   setLoanDetail: <K extends keyof LoanDetailsState>(key: K, value: LoanDetailsState[K]) => void;
+  setSaveContext: (id: string, version: number) => void;
   /**
    * Phase 23 — seed the workbench from a Phase 23 loan-extraction
    * result. Maps the LoanExtraction shape (as JSON) into:
@@ -166,6 +172,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   rows: [emptyRow()],
   selectedRowId: null,
   loanDetails: { ...DEFAULT_LOAN_DETAILS },
+  currentCalcId: null,
+  currentVersion: 0,
 
   setMaster: (key, value) => set((s) => ({ master: { ...s.master, [key]: value } })),
 
@@ -198,7 +206,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       master: { ...DEFAULT_MASTER },
       rows: [emptyRow()],
       loanDetails: { ...DEFAULT_LOAN_DETAILS },
+      currentCalcId: null,
+      currentVersion: 0,
     }),
+
+  setSaveContext: (id, version) => set({ currentCalcId: id, currentVersion: version }),
 
   loadFromEvents: (rows, master) => set({ rows, master, selectedRowId: null }),
 

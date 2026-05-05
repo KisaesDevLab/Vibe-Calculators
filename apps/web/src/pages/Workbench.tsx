@@ -9,6 +9,7 @@ import {
   HelpCircle,
   Layers,
   X,
+  Save,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ScheduleChart, scheduleToTsv, type ChartKind } from "@/components/schedule/ScheduleChart";
@@ -110,8 +111,46 @@ export function WorkbenchPage(): JSX.Element {
   const loanDetails = useWorkbenchStore((s) => s.loanDetails);
   const setLoanDetail = useWorkbenchStore((s) => s.setLoanDetail);
   const seedFromExtraction = useWorkbenchStore((s) => s.seedFromExtraction);
+  const currentCalcId = useWorkbenchStore((s) => s.currentCalcId);
+  const currentVersion = useWorkbenchStore((s) => s.currentVersion);
+  const setSaveContext = useWorkbenchStore((s) => s.setSaveContext);
   const [loanDetailsOpen, setLoanDetailsOpen] = useState(false);
   const [seriesEditorOpen, setSeriesEditorOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  async function saveCalculation(): Promise<void> {
+    setSaving(true);
+    try {
+      const inputs = { master, rows, loanDetails };
+      if (!currentCalcId) {
+        const res = await fetch("/api/v1/calculations", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: master.label || "Untitled", kind: "tvm", inputs }),
+        });
+        if (!res.ok) throw new Error(await readDetail(res));
+        const j = (await res.json()) as { calculation: { id: string; version: number } };
+        setSaveContext(j.calculation.id, j.calculation.version ?? 1);
+        toast.success(`Saved as version ${j.calculation.version ?? 1}.`);
+      } else {
+        const res = await fetch(`/api/v1/calculations/${encodeURIComponent(currentCalcId)}/save`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ inputs }),
+        });
+        if (!res.ok) throw new Error(await readDetail(res));
+        const j = (await res.json()) as { version: { version: number; id: string } };
+        setSaveContext(currentCalcId, j.version.version);
+        toast.success(`Saved as version ${j.version.version}.`);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  }
 
   // Phase 23 — pick up a seed left by the /extract page in
   // sessionStorage. Single-shot: consumed once and cleared.
@@ -170,11 +209,31 @@ export function WorkbenchPage(): JSX.Element {
           <ArrowDownAZ className="h-4 w-4" />
           Sort
         </Button>
+        <Button
+          onClick={() => void saveCalculation()}
+          disabled={saving}
+          aria-label="Save calculation"
+        >
+          <Save className="h-4 w-4" />
+          {saving ? "Saving…" : currentCalcId ? `Save v${currentVersion + 1}` : "Save"}
+        </Button>
         <Button variant="outline" onClick={reset} aria-label="Reset workbench">
           <RotateCcw className="h-4 w-4" />
           Reset
         </Button>
       </header>
+      {currentCalcId && (
+        <p className="text-xs text-muted-foreground">
+          Saved as calculation <code className="font-mono">{currentCalcId.slice(0, 8)}</code>,
+          version {currentVersion}.{" "}
+          <a
+            href={`/calculations/${currentCalcId}/versions`}
+            className="underline hover:text-foreground"
+          >
+            View version history →
+          </a>
+        </p>
+      )}
 
       {/* Master controls */}
       <Card>
@@ -701,6 +760,16 @@ function SeriesEditor({
       </div>
     </CardContent>
   );
+}
+
+async function readDetail(res: Response): Promise<string> {
+  const text = await res.text();
+  try {
+    const j = JSON.parse(text) as { detail?: string };
+    return j.detail ?? `HTTP ${res.status}`;
+  } catch {
+    return text || `HTTP ${res.status}`;
+  }
 }
 
 function slug(s: string): string {
