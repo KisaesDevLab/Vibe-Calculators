@@ -56,6 +56,16 @@ export function buildApiKeysRouter(deps: ApiKeysRouteDeps): Router {
     if (!parsed.success)
       return problem(res, 400, "Bad request", "Invalid body", { issues: parsed.error.issues });
 
+    // Privilege-escalation guard: an issuer may only mint keys that
+    // act as themselves. Issuing a key acting as a *different* user
+    // requires admin role (which already has user:invite). For non-
+    // admin issuers (e.g. reviewer extending integrations on their
+    // own account), the only safe default is self.
+    const targetUserId = parsed.data.actAsUserId ?? req.user.id;
+    if (targetUserId !== req.user.id && req.user.role !== "admin") {
+      return problem(res, 403, "Forbidden", "Only admin may issue API keys acting as another user");
+    }
+
     const { plaintext, prefix, hash } = generateToken();
     const expiresAt = parsed.data.expiresInDays
       ? new Date(Date.now() + parsed.data.expiresInDays * 86_400_000)
@@ -68,7 +78,7 @@ export function buildApiKeysRouter(deps: ApiKeysRouteDeps): Router {
         tokenHash: hash,
         scopes: parsed.data.scopes,
         issuedBy: req.user.id,
-        actAsUserId: parsed.data.actAsUserId ?? req.user.id,
+        actAsUserId: targetUserId,
         expiresAt,
       })
       .returning();

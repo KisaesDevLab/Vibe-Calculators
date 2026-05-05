@@ -80,7 +80,7 @@ describe("HSA contribution & projection", () => {
     expect(out.notes.some((n) => n.includes("Last-month"))).toBe(true);
   });
 
-  it("Projection: $5k initial + $4,150 contrib over 30 yrs at 6% ≈ $52,490", () => {
+  it("Projection: $5k initial + $4,150 annual contrib over 30 yrs at 6% ≈ $376k", () => {
     const out = hsa.compute(
       {
         coverage: "self_only",
@@ -95,8 +95,27 @@ describe("HSA contribution & projection", () => {
       },
       ctx,
     );
-    // (5000 + 4150) × 1.06^30 ≈ 52,547
-    expect(out.projectedBalance).toBeGreaterThan(52_000);
-    expect(out.projectedBalance).toBeLessThan(53_000);
+    // Annuity-due: 5000 × 1.06^30 + 4150 × ((1.06^30 - 1)/0.06) × 1.06
+    //            = 28,717 + 347,778 = 376,495
+    expect(out.projectedBalance).toBeGreaterThan(376_000);
+    expect(out.projectedBalance).toBeLessThan(377_000);
+  });
+
+  it("Projection at 0% growth degenerates to balance + n × annual contribution", () => {
+    const out = hsa.compute(
+      {
+        coverage: "self_only",
+        age: 40,
+        monthsEligible: 12,
+        plannedContribution: 4_150,
+        useLastMonthRule: false,
+        taxYear: 2024,
+        currentBalance: 5_000,
+        yearsToProject: 10,
+        growthRate: 0,
+      },
+      ctx,
+    );
+    expect(out.projectedBalance).toBe(5_000 + 10 * 4_150);
   });
 });

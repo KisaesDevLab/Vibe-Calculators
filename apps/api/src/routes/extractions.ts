@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { extractionJobs, type Database } from "@vibe-calc/db";
 import { extractLoanAgreement, flagLowConfidenceFields, type LlmProvider } from "@vibe-calc/llm";
@@ -25,6 +25,8 @@ export interface ExtractionRouteDeps {
   llmProvider?: LlmProvider | undefined;
   /** Threshold below which a field is flagged for review. Default 0.7. */
   confidenceThreshold?: number;
+  /** Hard timeout for the LLM call. Default 60s. */
+  llmTimeoutMs?: number;
 }
 
 const createSchema = z.object({
@@ -71,7 +73,7 @@ export function buildExtractionsRouter(deps: ExtractionRouteDeps): Router {
     const rows = await deps.db
       .select()
       .from(extractionJobs)
-      .where(conds.length > 0 ? conds[0] : undefined)
+      .where(conds.length > 0 ? and(...conds) : undefined)
       .orderBy(desc(extractionJobs.createdAt))
       .limit(100);
     res.json({ extractions: rows.map(serialize) });
@@ -114,10 +116,30 @@ export function buildExtractionsRouter(deps: ExtractionRouteDeps): Router {
       .set({ status: "processing" })
       .where(eq(extractionJobs.id, id));
 
+    // Defense against a hung LLM call leaving the row in 'processing'
+    // forever. A 60-second budget is generous for prompt extractions;
+    // if the provider truly needs longer, increase the env knob.
+    const llmTimeoutMs = deps.llmTimeoutMs ?? 60_000;
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
     try {
-      const out = await extractLoanAgreement(deps.llmProvider, job.documentText);
+      const out = await Promise.race([
+        extractLoanAgreement(deps.llmProvider, job.documentText),
+        new Promise<never>((_, reject) => {
+          timeoutHandle = setTimeout(
+            () => reject(new Error(`LLM provider timed out after ${llmTimeoutMs}ms`)),
+            llmTimeoutMs,
+          );
+        }),
+      ]);
+      // Clear timer on success so we don't leak a setTimeout per
+      // request (the GC would eventually reclaim it but cumulative
+      // pending timers slow the event loop under load).
+      if (timeoutHandle) clearTimeout(timeoutHandle);
       const flagged = flagLowConfidenceFields(out.extraction, deps.confidenceThreshold ?? 0.7);
-      const newStatus = flagged.length > 0 ? "needs_review" : "needs_review"; // Always require explicit approval before use.
+      // Phase 23.7 — every extraction lands at needs_review so a human
+      // explicitly approves before downstream use, regardless of the
+      // confidence-flag count. The flag count drives UI emphasis.
+      const newStatus = "needs_review";
       const [updated] = await deps.db
         .update(extractionJobs)
         .set({
@@ -147,6 +169,7 @@ export function buildExtractionsRouter(deps: ExtractionRouteDeps): Router {
       });
       res.json({ extraction: serialize(updated ?? job), flaggedFields: flagged });
     } catch (err) {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
       const message = err instanceof Error ? err.message : String(err);
       await deps.db
         .update(extractionJobs)

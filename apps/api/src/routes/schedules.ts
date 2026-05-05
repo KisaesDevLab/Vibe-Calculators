@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { and, asc, desc, eq, isNull, lte } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   schedules,
@@ -221,8 +221,33 @@ async function runOneSchedule(
   scheduleId: string,
   actorUserId: string,
 ): Promise<RunResult | null> {
-  const [s] = await deps.db.select().from(schedules).where(eq(schedules.id, scheduleId)).limit(1);
-  if (!s) return null;
+  // Claim-then-send pattern: advance next_run_at *before* the email
+  // is sent, so a double-tick can't double-fire. The SELECT FOR
+  // UPDATE SKIP LOCKED claim defends against two concurrent /tick
+  // callers (cron + manual, or two BullMQ workers) — the second
+  // caller skips a row already locked by the first.
+  const next = await deps.db.transaction(async (tx) => {
+    const claimRows = await tx.execute(
+      sql`SELECT * FROM schedules WHERE id = ${scheduleId} FOR UPDATE SKIP LOCKED`,
+    );
+    const claimed = (claimRows as unknown as { rows: { id: string }[] }).rows ?? [];
+    if (claimed.length === 0) return null;
+    const [s] = await tx.select().from(schedules).where(eq(schedules.id, scheduleId)).limit(1);
+    if (!s) return null;
+    const advance = nextRunAt(s.cadence as ScheduleCadence, new Date());
+    const [updatedSchedule] = await tx
+      .update(schedules)
+      .set({
+        nextRunAt: advance ?? new Date(),
+        status: advance ? "active" : "completed",
+        updatedAt: new Date(),
+      })
+      .where(eq(schedules.id, s.id))
+      .returning();
+    return { s, updatedSchedule };
+  });
+  if (!next) return null;
+  const { s, updatedSchedule } = next;
 
   const [calc] = await deps.db
     .select()
@@ -279,18 +304,6 @@ async function runOneSchedule(
       deliveryDetails: details,
     })
     .where(eq(scheduleInstances.id, instance.id))
-    .returning();
-
-  // Advance the schedule.
-  const next = nextRunAt(s.cadence as ScheduleCadence, new Date());
-  const [updatedSchedule] = await deps.db
-    .update(schedules)
-    .set({
-      nextRunAt: next ?? new Date(),
-      status: next ? "active" : "completed",
-      updatedAt: new Date(),
-    })
-    .where(eq(schedules.id, s.id))
     .returning();
 
   await recordAuditEvent(deps.db, {

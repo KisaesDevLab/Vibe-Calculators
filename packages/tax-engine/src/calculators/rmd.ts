@@ -50,6 +50,14 @@ const inputSchema = z
     decedentDeathYear: z.number().int().min(1900).max(2100).optional(),
     /** Beneficiary is an Eligible Designated Beneficiary (EDB)? */
     beneficiaryIsEdb: z.boolean().default(false),
+    /**
+     * Year of the FIRST RMD distribution (single_life inherited mode).
+     * Per §401(a)(9)(B)(iii), non-spouse beneficiaries lock in the
+     * single-life divisor at the year of first distribution and
+     * subtract 1 each subsequent year (fixed-term, NOT fresh annual
+     * lookup). Defaults to `distributionYear` if omitted.
+     */
+    firstDistributionYear: z.number().int().min(1900).max(2100).optional(),
   })
   .strict()
   .superRefine((input, ctx) => {
@@ -116,11 +124,19 @@ const rmd: TaxCalculator<Input, Output> = {
     if (input.mode === "single_life") {
       // Inherited IRA: post-SECURE (death after 2019) imposes the
       // 10-year rule unless beneficiary is EDB.
+      // Per §401(a)(9)(B)(iii), non-spouse beneficiaries use a
+      // fixed-term divisor: look up single-life expectancy at the
+      // year of first distribution, then subtract 1 each subsequent
+      // year. Fresh annual lookup over-states the RMD over time.
       const decedentYear = input.decedentDeathYear;
       const benBirth = input.beneficiaryBirthYear;
       if (benBirth === undefined) throw new Error("unreachable");
       const benAgeAtYearEnd = input.distributionYear - benBirth;
-      const divisor = singleLifeDivisor(benAgeAtYearEnd);
+      const firstYr = input.firstDistributionYear ?? input.distributionYear;
+      const ageAtFirst = firstYr - benBirth;
+      const initialDivisor = singleLifeDivisor(ageAtFirst);
+      const yearsElapsed = Math.max(0, input.distributionYear - firstYr);
+      const divisor = Math.max(1, initialDivisor - yearsElapsed);
       const amount = balance.div(divisor).toDecimalPlaces(2);
       let rule = "Single-life expectancy (pre-SECURE stretch)";
       if (decedentYear !== undefined && decedentYear >= 2020) {

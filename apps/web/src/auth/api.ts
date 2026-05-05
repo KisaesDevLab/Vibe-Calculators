@@ -34,13 +34,23 @@ async function call<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     const text = await res.text();
     let detail: string;
+    let issues: { path: string; message: string }[] | undefined;
     try {
-      const json = JSON.parse(text) as { detail?: string };
+      const json = JSON.parse(text) as {
+        detail?: string;
+        issues?: { path: string | string[]; message: string }[];
+      };
       detail = json.detail ?? text;
+      if (Array.isArray(json.issues)) {
+        issues = json.issues.map((i) => ({
+          path: Array.isArray(i.path) ? i.path.join(".") : i.path,
+          message: i.message,
+        }));
+      }
     } catch {
       detail = text || res.statusText;
     }
-    throw new ApiError(res.status, detail);
+    throw new ApiError(res.status, detail, issues);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
@@ -50,6 +60,7 @@ export class ApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    public readonly issues?: { path: string; message: string }[],
   ) {
     super(message);
     this.name = "ApiError";

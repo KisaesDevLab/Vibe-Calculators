@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { asc, desc } from "drizzle-orm";
+import { asc, desc, sql } from "drizzle-orm";
 import {
   authEvents,
   AUTH_EVENTS_GENESIS_HASH,
@@ -94,52 +94,61 @@ export interface RecordAuthEventInput {
  * one row per request) it's acceptable; Phase 21 may upgrade to a
  * SERIALIZABLE-isolated transaction or an advisory lock.
  */
+// Distinct from the audit_events lock key — these are independent
+// chains and shouldn't serialize against each other.
+const AUTH_CHAIN_LOCK_KEY = 770000002;
+
 export async function recordAuthEvent(
   db: Database,
   input: RecordAuthEventInput,
 ): Promise<AuthEventRow> {
   const now = input.now ?? new Date();
+  // Hold the chain lock for read-prev → insert. Two concurrent
+  // failed-login attempts on the same (ip, email) would otherwise
+  // both read the same prev_hash and fork the chain.
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(${AUTH_CHAIN_LOCK_KEY})`);
+    const prev = await tx
+      .select({ rowHash: authEvents.rowHash })
+      .from(authEvents)
+      .orderBy(desc(authEvents.createdAt), desc(authEvents.id))
+      .limit(1);
 
-  const prev = await db
-    .select({ rowHash: authEvents.rowHash })
-    .from(authEvents)
-    .orderBy(desc(authEvents.createdAt), desc(authEvents.id))
-    .limit(1);
+    const prevHash = prev[0]?.rowHash ?? AUTH_EVENTS_GENESIS_HASH;
 
-  const prevHash = prev[0]?.rowHash ?? AUTH_EVENTS_GENESIS_HASH;
-
-  const id = generateUuidV4();
-  const recorded: RecordedFields = {
-    id,
-    createdAt: now,
-    kind: input.kind,
-    userId: input.userId ?? null,
-    actorUserId: input.actorUserId ?? null,
-    ip: input.ip ?? null,
-    userAgent: input.userAgent ?? null,
-    payload: input.payload ?? {},
-  };
-
-  const rowHash = computeRowHash(prevHash, recorded);
-
-  const [row] = await db
-    .insert(authEvents)
-    .values({
+    const id = generateUuidV4();
+    const recorded: RecordedFields = {
       id,
       createdAt: now,
-      kind: recorded.kind,
-      userId: recorded.userId,
-      actorUserId: recorded.actorUserId,
-      ip: recorded.ip,
-      userAgent: recorded.userAgent,
-      payload: recorded.payload,
-      prevHash,
-      rowHash,
-    })
-    .returning();
+      kind: input.kind,
+      userId: input.userId ?? null,
+      actorUserId: input.actorUserId ?? null,
+      ip: input.ip ?? null,
+      userAgent: input.userAgent ?? null,
+      payload: input.payload ?? {},
+    };
 
-  if (!row) throw new Error("auth_events insert returned no row");
-  return row;
+    const rowHash = computeRowHash(prevHash, recorded);
+
+    const [row] = await tx
+      .insert(authEvents)
+      .values({
+        id,
+        createdAt: now,
+        kind: recorded.kind,
+        userId: recorded.userId,
+        actorUserId: recorded.actorUserId,
+        ip: recorded.ip,
+        userAgent: recorded.userAgent,
+        payload: recorded.payload,
+        prevHash,
+        rowHash,
+      })
+      .returning();
+
+    if (!row) throw new Error("auth_events insert returned no row");
+    return row;
+  });
 }
 
 export interface ChainValidationOk {

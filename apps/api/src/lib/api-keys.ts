@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { apiKeys, type ApiKeyRow, type Database } from "@vibe-calc/db";
 
@@ -57,14 +57,23 @@ export async function verifyApiKeyHeader(
   const prefix = body.slice(0, 8);
   const [row] = await db.select().from(apiKeys).where(eq(apiKeys.prefix, prefix)).limit(1);
   if (!row) return null;
-  if (hashToken(token) !== row.tokenHash) return null;
+  // Constant-time compare of the SHA-256 hashes — defense against any
+  // timing-side-channel that could distinguish near-matches by prefix.
+  const computed = Buffer.from(hashToken(token), "hex");
+  const stored = Buffer.from(row.tokenHash, "hex");
+  if (computed.length !== stored.length) return null;
+  if (!timingSafeEqual(computed, stored)) return null;
 
   const expired = !!row.expiresAt && row.expiresAt.getTime() < Date.now();
   const revoked = !!row.revokedAt;
   if (expired || revoked) return { row, expired, revoked };
 
-  // Best-effort liveness update — non-blocking.
-  void db.update(apiKeys).set({ lastUsedAt: new Date() }).where(eq(apiKeys.id, row.id));
+  // Best-effort liveness update — non-blocking; logged on failure but
+  // never propagated to the request lifecycle.
+  db.update(apiKeys)
+    .set({ lastUsedAt: new Date() })
+    .where(eq(apiKeys.id, row.id))
+    .catch(() => undefined);
 
   return { row, expired: false, revoked: false };
 }

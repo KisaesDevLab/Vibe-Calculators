@@ -33,8 +33,13 @@ export function RequirePerm({
   children: ReactNode;
 }): JSX.Element {
   const { hasPermission, isLoading, isAuthenticated } = useAuth();
+  const location = useLocation();
   if (isLoading) return <FullScreenSpinner label="Loading session…" />;
-  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (!isAuthenticated) {
+    // Preserve the intended target so the post-login redirect lands
+    // back here rather than the default /health page.
+    return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
+  }
   if (!hasPermission(perm)) {
     return (
       <main className="mx-auto max-w-lg px-6 py-16 text-center">

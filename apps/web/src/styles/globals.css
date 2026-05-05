@@ -70,9 +70,12 @@
  * table). Selectors marked .print:hidden in the markup are excluded.
  */
 @media print {
+  /* AppShell renders a plain <header> (no role="banner"), so target
+     all top-level <header> elements alongside nav rails. */
   aside,
-  header[role="banner"],
-  nav {
+  header,
+  nav,
+  [data-print-hide="true"] {
     display: none !important;
   }
   body {

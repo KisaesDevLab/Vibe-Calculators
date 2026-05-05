@@ -80,17 +80,28 @@ const section1031: TaxCalculator<Input, Output> = {
   },
   compute(input) {
     const realized = new Decimal(input.fmvRelinquished).minus(input.adjustedBasisRelinquished);
+    // Reg §1.1031(d)-2 example 2: cash boot given OFFSETS cash boot
+    // received before computing recognized gain. Net debt relief is
+    // capped at zero on the receive side; net debt assumed (negative
+    // input.netDebtRelief) flows into boot given.
     const debtRelief = Decimal.max(0, input.netDebtRelief);
-    const bootReceived = new Decimal(input.cashBootReceived)
+    const debtAssumed = Decimal.max(0, new Decimal(-input.netDebtRelief));
+    const grossBootReceived = new Decimal(input.cashBootReceived)
       .plus(input.otherPropertyBoot)
       .plus(debtRelief);
-    const recognized = Decimal.max(0, Decimal.min(realized, bootReceived));
+    const grossBootGiven = new Decimal(input.cashBootGiven).plus(debtAssumed);
+    // Net cash boot — only the unilateral overage triggers gain.
+    const netBootReceived = Decimal.max(0, grossBootReceived.minus(grossBootGiven));
+    const recognized = Decimal.max(0, Decimal.min(realized, netBootReceived));
     const deferred = realized.minus(recognized);
+    // Echo the gross boot in the response so the caller can audit.
+    const bootReceived = grossBootReceived;
 
-    // Substitute basis: old basis - boot received + boot given + recognized gain
+    // Substitute basis: old basis - gross boot received + gross boot
+    // given + recognized gain (Reg §1.1031(d)-1).
     const substituteBasis = new Decimal(input.adjustedBasisRelinquished)
-      .minus(bootReceived)
-      .plus(input.cashBootGiven)
+      .minus(grossBootReceived)
+      .plus(grossBootGiven)
       .plus(recognized);
 
     const recaptureFlag = input.isSection1245 && recognized.gt(0);

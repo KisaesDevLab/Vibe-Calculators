@@ -165,7 +165,11 @@ const qualifiedPlanLimits: TaxCalculator<Input, Output> = {
       } else if (input.age >= 50) {
         catchup = limits["401kCatchup50"];
       }
-      employerLimit = Math.max(0, fourFifteenC - employeeLimit - catchup);
+      // §415(c) caps EMPLOYEE + EMPLOYER additions; catch-up is ON TOP
+      // of §415(c). Per IRC §414(v)(3), catch-up is excluded from the
+      // §415(c) limit. So employer room = §415(c) - employee deferral
+      // (no catch-up subtraction); combined cap = §415(c) + catch-up.
+      employerLimit = Math.max(0, fourFifteenC - employeeLimit);
       combinedLimit = fourFifteenC + catchup;
     } else if (input.planType === "sep_ira") {
       const sep = limits.sepIra;
@@ -181,10 +185,18 @@ const qualifiedPlanLimits: TaxCalculator<Input, Output> = {
     } else if (input.planType === "solo_401k") {
       employeeLimit = limits["401k"];
       catchup = input.age >= 50 ? limits["401kCatchup50"] : 0;
-      // Solo 401(k) employer = up to 25% of net SE earnings (or 20% as netted).
-      const employerSep = new Decimal(input.compensation).times(0.25).toNumber();
+      // Solo 401(k) employer for SOLE PROPRIETORS uses 20% of NET SE
+      // earnings (post-half-SE-tax). Pub 560 worksheet: the published
+      // "25% of comp" applies to W-2 wages (corp owner-employees);
+      // self-employment math nets to 20% of net SE earnings due to the
+      // half-SE-tax-deduction circularity. Use 20% as the conservative
+      // default and surface a note.
+      const employerSep = new Decimal(input.compensation).times(0.2).toNumber();
       employerLimit = employerSep;
       combinedLimit = Math.min(fourFifteenC + catchup, employeeLimit + catchup + employerLimit);
+      notes.push(
+        "Solo 401(k) employer side computed as 20% of net SE earnings (Pub 560 sole-prop worksheet). For owner-employees taking W-2 wages from an S-corp, multiply by 25% of W-2 wages instead.",
+      );
     } else {
       // Defined benefit
       combinedLimit = limits.defBenAnnualMax;

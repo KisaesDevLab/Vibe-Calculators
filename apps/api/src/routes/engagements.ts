@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { and, desc, eq, isNull, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { engagements, calculations, entityTags, tags, type Database } from "@vibe-calc/db";
+import { roleHasPermission } from "@vibe-calc/shared-types";
 import { problem, requirePermission } from "../middleware/auth.js";
 
 /**
@@ -182,43 +183,48 @@ export function buildEngagementsRouter(deps: EngagementRouteDeps): Router {
     },
   );
 
-  router.post("/:id/transition", async (req: Request, res: Response) => {
-    if (!req.user) return problem(res, 401, "Unauthorized", "Authentication required");
-    const id = readIdParam(req);
-    if (!id) return problem(res, 400, "Bad request", "Missing id");
-    const parsed = transitionSchema.safeParse(req.body);
-    if (!parsed.success) return problem(res, 400, "Bad request", "Invalid body");
-    const [current] = await deps.db
-      .select()
-      .from(engagements)
-      .where(eq(engagements.id, id))
-      .limit(1);
-    if (!current) return problem(res, 404, "Not found", "Engagement not found");
-    const allowed = VALID_TRANSITIONS[current.status] ?? [];
-    if (!allowed.includes(parsed.data.to)) {
-      return problem(
-        res,
-        409,
-        "Conflict",
-        `Cannot transition from ${current.status} to ${parsed.data.to}`,
-      );
-    }
-    // Approval requires reviewer role; submit-for-review is preparer-tier.
-    if (
-      parsed.data.to === "approved" &&
-      req.user.role !== "admin" &&
-      req.user.role !== "reviewer"
-    ) {
-      return problem(res, 403, "Forbidden", "Only reviewer/admin can approve");
-    }
-    const [row] = await deps.db
-      .update(engagements)
-      .set({ status: parsed.data.to, updatedAt: new Date() })
-      .where(eq(engagements.id, id))
-      .returning();
-    if (!row) return problem(res, 404, "Not found", "Engagement not found");
-    res.json({ engagement: serializeEngagement(row) });
-  });
+  router.post(
+    "/:id/transition",
+    requirePermission("engagement:update"),
+    async (req: Request, res: Response) => {
+      if (!req.user) return problem(res, 401, "Unauthorized", "Authentication required");
+      const id = readIdParam(req);
+      if (!id) return problem(res, 400, "Bad request", "Missing id");
+      const parsed = transitionSchema.safeParse(req.body);
+      if (!parsed.success) return problem(res, 400, "Bad request", "Invalid body");
+      const [current] = await deps.db
+        .select()
+        .from(engagements)
+        .where(eq(engagements.id, id))
+        .limit(1);
+      if (!current) return problem(res, 404, "Not found", "Engagement not found");
+      const allowed = VALID_TRANSITIONS[current.status] ?? [];
+      if (!allowed.includes(parsed.data.to)) {
+        return problem(
+          res,
+          409,
+          "Conflict",
+          `Cannot transition from ${current.status} to ${parsed.data.to}`,
+        );
+      }
+      // The "approved" transition specifically requires the
+      // calculation:approve permission (reviewer+). Permission lookup
+      // via the canonical helper — no inline role checks (CLAUDE.md).
+      if (
+        parsed.data.to === "approved" &&
+        !roleHasPermission(req.user.role, "calculation:approve")
+      ) {
+        return problem(res, 403, "Forbidden", "Permission 'calculation:approve' required");
+      }
+      const [row] = await deps.db
+        .update(engagements)
+        .set({ status: parsed.data.to, updatedAt: new Date() })
+        .where(eq(engagements.id, id))
+        .returning();
+      if (!row) return problem(res, 404, "Not found", "Engagement not found");
+      res.json({ engagement: serializeEngagement(row) });
+    },
+  );
 
   router.post(
     "/:id/archive",

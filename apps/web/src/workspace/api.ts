@@ -10,6 +10,7 @@ export class WorkspaceApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    public readonly issues?: { path: string; message: string }[],
   ) {
     super(message);
     this.name = "WorkspaceApiError";
@@ -27,13 +28,23 @@ async function call<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     let detail = res.statusText;
+    let issues: { path: string; message: string }[] | undefined;
     try {
-      const json = (await res.json()) as { detail?: string };
+      const json = (await res.json()) as {
+        detail?: string;
+        issues?: { path: string | string[]; message: string }[];
+      };
       if (json.detail) detail = json.detail;
+      if (Array.isArray(json.issues)) {
+        issues = json.issues.map((i) => ({
+          path: Array.isArray(i.path) ? i.path.join(".") : i.path,
+          message: i.message,
+        }));
+      }
     } catch {
       /* swallow */
     }
-    throw new WorkspaceApiError(res.status, detail);
+    throw new WorkspaceApiError(res.status, detail, issues);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
@@ -118,6 +129,8 @@ export interface SearchHit {
   title: string;
   subtitle: string;
   updatedAt: string;
+  engagementId?: string | null;
+  clientId?: string | null;
 }
 
 export interface QueueResponse {

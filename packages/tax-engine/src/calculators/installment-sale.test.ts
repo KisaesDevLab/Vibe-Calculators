@@ -10,6 +10,7 @@ describe("§453 installment sale", () => {
         salePrice: 200_000,
         adjustedBasis: 100_000,
         sellingExpenses: 0,
+        mortgageAssumedByBuyer: 0,
         depreciationRecapture: 0,
         payments: [
           { year: 2024, principal: 100_000, interest: 5_000 },
@@ -31,6 +32,7 @@ describe("§453 installment sale", () => {
         salePrice: 200_000,
         adjustedBasis: 100_000,
         sellingExpenses: 20_000,
+        mortgageAssumedByBuyer: 0,
         depreciationRecapture: 0,
         payments: [{ year: 2024, principal: 200_000, interest: 0 }],
       },
@@ -47,6 +49,7 @@ describe("§453 installment sale", () => {
         salePrice: 200_000,
         adjustedBasis: 100_000,
         sellingExpenses: 0,
+        mortgageAssumedByBuyer: 0,
         depreciationRecapture: 30_000,
         payments: [
           { year: 2024, principal: 50_000, interest: 0 },

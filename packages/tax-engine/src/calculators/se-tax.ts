@@ -128,10 +128,13 @@ const seTax: TaxCalculator<Input, Output> = {
     const fica = readFica(ctx, input.taxYear);
     const notes: string[] = [];
     const seGross = new Decimal(input.netSeEarnings);
-    if (seGross.lte(400)) {
-      notes.push("SE earnings ≤ $400 — no SE tax due (Schedule SE Part I exception).");
+    const seNet = seGross.times(0.9235);
+    // Schedule SE Part I: no SE tax if **net** SE earnings (after the
+    // 92.35% multiplier) are < $400. Test net, not gross.
+    if (seNet.lt(400)) {
+      notes.push("Net SE earnings < $400 — no SE tax due (Schedule SE Part I exception).");
       return {
-        netSeEarningsAfterMultiplier: 0,
+        netSeEarningsAfterMultiplier: seNet.toDecimalPlaces(2).toNumber(),
         oasdiBase: 0,
         oasdiTax: 0,
         medicareTax: 0,
@@ -141,7 +144,6 @@ const seTax: TaxCalculator<Input, Output> = {
         notes,
       };
     }
-    const seNet = seGross.times(0.9235);
 
     // OASDI base = min(SE earnings, wage base - W-2 OASDI wages)
     const remainingOasdiRoom = Decimal.max(

@@ -22,9 +22,62 @@ export interface WebhooksRouteDeps {
 
 const createSchema = z.object({
   name: z.string().min(1).max(100),
-  url: z.string().url(),
+  url: z
+    .string()
+    .url()
+    .refine((u) => isSafeWebhookUrl(u), {
+      message:
+        "URL must be https (http only for explicit test hostnames) and must NOT target private IP / loopback / link-local / cloud-metadata addresses",
+    }),
   actions: z.array(z.string()).default([]),
 });
+
+/**
+ * SSRF guard. Webhook URLs go to untrusted destinations; if an admin
+ * (or compromised admin token) sets the URL to an internal address,
+ * the dispatcher would happily POST every event there. Block:
+ *   - non-https schemes (http permitted only for explicit test hosts)
+ *   - hostname `localhost` / IPv6 loopback / cloud-metadata names
+ *   - private IPv4 ranges (10/8, 127/8, 169.254/16, 172.16/12, 192.168/16)
+ *   - obvious IPv6 link-local (fe80::), unique-local (fc/fd::), loopback
+ * Hostname-to-IP DNS isn't done here; downstream `fetch` follows
+ * redirects automatically — a future hardening would refuse redirects
+ * to a different host.
+ */
+function isSafeWebhookUrl(raw: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return false;
+  const host = parsed.hostname.toLowerCase();
+  if (parsed.protocol === "http:") {
+    const allowedHttp = new Set(["example.test", "webhook.local", "localhost.test"]);
+    if (!allowedHttp.has(host)) return false;
+  }
+  if (host === "localhost" || host === "ip6-localhost" || host === "ip6-loopback") return false;
+  if (host === "169.254.169.254") return false; // AWS / GCP metadata
+  if (host === "metadata.google.internal") return false;
+  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4) {
+    const a = Number(ipv4[1]);
+    const b = Number(ipv4[2]);
+    if (a === 10) return false;
+    if (a === 127) return false;
+    if (a === 169 && b === 254) return false;
+    if (a === 172 && b >= 16 && b <= 31) return false;
+    if (a === 192 && b === 168) return false;
+    if (a === 0) return false;
+  }
+  if (host.startsWith("[") || host.includes(":")) {
+    if (host.includes("::1")) return false;
+    if (host.startsWith("fe80")) return false;
+    if (host.startsWith("fc") || host.startsWith("fd")) return false;
+  }
+  return true;
+}
 
 export function buildWebhooksRouter(deps: WebhooksRouteDeps): Router {
   const router = Router();

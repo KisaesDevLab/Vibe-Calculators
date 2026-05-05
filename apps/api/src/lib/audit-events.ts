@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { asc, desc } from "drizzle-orm";
+import { asc, desc, sql } from "drizzle-orm";
 import {
   auditEvents,
   AUDIT_EVENTS_GENESIS_HASH,
@@ -82,46 +82,59 @@ export interface RecordAuditEventInput {
  * The same caveat as auth-events applies: NOT atomic across
  * concurrent writers. The validator catches resulting forks.
  */
+// Stable advisory-lock key for the audit_events chain. The number
+// is arbitrary but must be unique across all `pg_advisory_xact_lock`
+// callers in this codebase. Picked from a high range to avoid
+// collisions with extension-supplied locks.
+const AUDIT_CHAIN_LOCK_KEY = 770000001;
+
 export async function recordAuditEvent(
   db: Database,
   input: RecordAuditEventInput,
 ): Promise<AuditEventRow> {
   const now = input.now ?? new Date();
-  const prev = await db
-    .select({ rowHash: auditEvents.rowHash })
-    .from(auditEvents)
-    .orderBy(desc(auditEvents.createdAt), desc(auditEvents.id))
-    .limit(1);
-  const prevHash = prev[0]?.rowHash ?? AUDIT_EVENTS_GENESIS_HASH;
+  // Hold the chain lock for the duration of read-prev → insert. Two
+  // concurrent writers serialize through the advisory lock; the
+  // second waits until the first commits. Per Postgres docs,
+  // pg_advisory_xact_lock is released automatically at tx end.
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(${AUDIT_CHAIN_LOCK_KEY})`);
+    const prev = await tx
+      .select({ rowHash: auditEvents.rowHash })
+      .from(auditEvents)
+      .orderBy(desc(auditEvents.createdAt), desc(auditEvents.id))
+      .limit(1);
+    const prevHash = prev[0]?.rowHash ?? AUDIT_EVENTS_GENESIS_HASH;
 
-  const id = crypto.randomUUID();
-  const recorded: RecordedFields = {
-    id,
-    createdAt: now,
-    action: input.action,
-    entityKind: input.entityKind,
-    entityId: input.entityId,
-    actorUserId: input.actorUserId ?? null,
-    payload: input.payload ?? {},
-  };
-  const rowHash = computeAuditRowHash(prevHash, recorded);
-
-  const [row] = await db
-    .insert(auditEvents)
-    .values({
+    const id = crypto.randomUUID();
+    const recorded: RecordedFields = {
       id,
       createdAt: now,
-      action: recorded.action,
-      entityKind: recorded.entityKind,
-      entityId: recorded.entityId,
-      actorUserId: recorded.actorUserId,
-      payload: recorded.payload,
-      prevHash,
-      rowHash,
-    })
-    .returning();
-  if (!row) throw new Error("audit_events insert returned no row");
-  return row;
+      action: input.action,
+      entityKind: input.entityKind,
+      entityId: input.entityId,
+      actorUserId: input.actorUserId ?? null,
+      payload: input.payload ?? {},
+    };
+    const rowHash = computeAuditRowHash(prevHash, recorded);
+
+    const [row] = await tx
+      .insert(auditEvents)
+      .values({
+        id,
+        createdAt: now,
+        action: recorded.action,
+        entityKind: recorded.entityKind,
+        entityId: recorded.entityId,
+        actorUserId: recorded.actorUserId,
+        payload: recorded.payload,
+        prevHash,
+        rowHash,
+      })
+      .returning();
+    if (!row) throw new Error("audit_events insert returned no row");
+    return row;
+  });
 }
 
 export interface ChainValidationOk {
@@ -138,6 +151,21 @@ export interface ChainValidationFail {
 
 export type ChainValidationResult = ChainValidationOk | ChainValidationFail;
 
+/**
+ * Walks audit_events in time order and verifies the prev_hash chain.
+ *
+ * **Concurrent-writer caveat**: the writer (`recordAuditEvent`) reads
+ * the latest row's hash and inserts non-atomically. Two parallel writes
+ * can both read the same `prev_hash` and both insert with it — a fork.
+ * The validator detects this as `prev-hash-mismatch` on the second row
+ * forward, which is reported as tampering even though it's a benign
+ * race. Resolution requires either a `SERIALIZABLE` transaction or a
+ * Postgres advisory lock; tracked as a Phase 21 follow-up.
+ *
+ * If you see `prev-hash-mismatch` on a fresh chain with no actual
+ * tampering, suspect a concurrent-writer fork rather than a malicious
+ * actor.
+ */
 export async function validateAuditEventChain(db: Database): Promise<ChainValidationResult> {
   const rows = await db
     .select()

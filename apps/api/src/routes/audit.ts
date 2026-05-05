@@ -25,12 +25,48 @@ const ENTITY_KINDS = new Set([
   "user",
 ]);
 
+// Mirrors the audit_action pgEnum in packages/db/src/schema/audit-events.ts.
+// Passing an unknown value to Postgres errors with 22P02; validate first.
+const VALID_ACTIONS = new Set([
+  "calculation.create",
+  "calculation.save",
+  "calculation.submit_for_review",
+  "calculation.approve",
+  "calculation.reject",
+  "calculation.rollback",
+  "calculation.archive",
+  "calculation.restore",
+  "calculation.comment",
+  "calculation.lock",
+  "engagement.create",
+  "engagement.transition",
+  "engagement.assign",
+  "engagement.archive",
+  "engagement.restore",
+  "client.create",
+  "client.update",
+  "client.archive",
+  "client.restore",
+  "tag.attach",
+  "tag.detach",
+  "bulk.archive",
+  "bulk.reassign",
+  "bulk.change_tax_year",
+  "export.created",
+  "export.downloaded",
+]);
+
 export function buildAuditRouter(deps: AuditRouteDeps): Router {
   const router = Router();
 
   router.get("/events", requirePermission("audit:read"), async (req: Request, res: Response) => {
     const limit = clamp(Number(req.query.limit ?? 100), 1, 500);
     const action = typeof req.query.action === "string" ? req.query.action : undefined;
+    // Validate the action against the enum — passing an arbitrary
+    // string would yield a Postgres invalid-enum error 500.
+    if (action !== undefined && !VALID_ACTIONS.has(action)) {
+      return problem(res, 400, "Bad request", `Unknown audit action: ${action}`);
+    }
     const conds = action ? [eq(auditEvents.action, action as never)] : [];
     const rows = await deps.db
       .select()

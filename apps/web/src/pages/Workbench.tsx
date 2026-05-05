@@ -1,4 +1,4 @@
-import { useMemo, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { Plus, Trash2, RotateCcw, Clipboard, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { ScheduleChart, scheduleToTsv, type ChartKind } from "@/components/schedule/ScheduleChart";
@@ -92,23 +92,26 @@ export function WorkbenchPage(): JSX.Element {
 
   const [error, setError] = useState<string | null>(null);
 
-  const schedule = useMemo<ScheduleResult | null>(() => {
+  // Compute schedule purely (no side effects). useMemo's contract
+  // forbids state mutations during render — moved to useEffect below.
+  const schedule = useMemo<{ result: ScheduleResult | null; error: string | null }>(() => {
     try {
       const events = rowsToEvents(rows);
-      if (events.length === 0) return null;
+      if (events.length === 0) return { result: null, error: null };
       const settings = masterToSettings(master);
-      return generateSchedule(events, settings);
+      return { result: generateSchedule(events, settings), error: null };
     } catch (e) {
-      // Show parse / validation errors below.
-      setError(e instanceof Error ? e.message : "Failed to compute schedule");
-      return null;
+      return {
+        result: null,
+        error: e instanceof Error ? e.message : "Failed to compute schedule",
+      };
     }
   }, [rows, master]);
 
-  // Reset error when inputs change cleanly.
-  useMemo(() => {
-    if (schedule) setError(null);
-  }, [schedule]);
+  // Sync the error state in an effect (the right hook for side effects).
+  useEffect(() => {
+    setError(schedule.error);
+  }, [schedule.error]);
 
   return (
     <main className="mx-auto max-w-7xl px-6 py-6 space-y-6">
@@ -234,7 +237,7 @@ export function WorkbenchPage(): JSX.Element {
       </Card>
 
       {/* Result panel */}
-      {schedule && <ResultPanel schedule={schedule} />}
+      {schedule.result && <ResultPanel schedule={schedule.result} />}
     </main>
   );
 }

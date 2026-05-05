@@ -1,4 +1,9 @@
-import express, { type Express } from "express";
+// Patches Express 4's router so async route handlers can throw and the
+// error reaches our error-handler middleware. Express 5 has this built
+// in; we'd remove this on the upgrade. MUST be imported before express.
+import "express-async-errors";
+
+import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import { buildHealthRouter, type HealthDependencies } from "./routes/health.js";
@@ -56,7 +61,11 @@ export function createApp(options: ServerOptions = {}): Express {
   const app = express();
 
   app.disable("x-powered-by");
-  app.set("trust proxy", true);
+  // Trust ONE hop (Caddy ingress) only. `true` would honor any
+  // X-Forwarded-For value, including attacker-supplied ones when the
+  // API is reachable outside Caddy. Per Express docs, a numeric hop
+  // count is the safer default.
+  app.set("trust proxy", 1);
   app.use(helmet());
   app.use(cookieParser());
   app.use(express.json({ limit: "1mb" }));
@@ -85,5 +94,33 @@ export function createApp(options: ServerOptions = {}): Express {
     app.use("/api/v1/bulk", buildBulkRouter(options.auth.routes));
   }
 
+  // Final RFC 7807 error handler — never leak stack traces or
+  // internal error messages to the client.
+  app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    if (res.headersSent) return;
+    const status = errorStatus(err);
+    res.status(status).json({
+      type: status === 500 ? "about:blank#internal" : "about:blank#error",
+      title: status === 500 ? "Internal error" : "Request error",
+      status,
+      detail: status === 500 ? "An internal error occurred." : safeMessage(err),
+    });
+  });
+
   return app;
+}
+
+function errorStatus(err: unknown): number {
+  if (err && typeof err === "object" && "statusCode" in err && typeof err.statusCode === "number") {
+    return err.statusCode;
+  }
+  return 500;
+}
+
+function safeMessage(err: unknown): string {
+  if (err instanceof Error) {
+    // Trim noisy internal details — message only, never stack.
+    return err.message.length > 200 ? err.message.slice(0, 200) + "…" : err.message;
+  }
+  return "Unknown error";
 }

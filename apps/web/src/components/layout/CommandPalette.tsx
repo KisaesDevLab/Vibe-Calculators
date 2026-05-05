@@ -181,12 +181,22 @@ export function CommandPalette(): JSX.Element {
                           key={`${h.kind}:${h.id}`}
                           value={`${h.kind} ${h.title} ${h.subtitle}`}
                           onSelect={() => {
+                            // Calculations don't have their own page yet
+                            // (Phase 11.8 deferred), so route to the
+                            // parent engagement for context. If no
+                            // parent engagement is known, fall back to
+                            // the parent client; only as a last resort
+                            // open the workbench.
                             const path =
                               h.kind === "client"
                                 ? `/clients/${h.id}`
                                 : h.kind === "engagement"
                                   ? `/engagements/${h.id}`
-                                  : "/calculators";
+                                  : h.engagementId
+                                    ? `/engagements/${h.engagementId}`
+                                    : h.clientId
+                                      ? `/clients/${h.clientId}`
+                                      : "/calculators";
                             navigate(path);
                             closePalette();
                           }}

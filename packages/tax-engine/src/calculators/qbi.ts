@@ -146,13 +146,15 @@ function computeSstbComponent(
   if (qbi.lte(0)) return new Decimal(0);
   if (regime === "below") return qbi.times(0.2);
   if (regime === "above") return new Decimal(0);
-  // Phase-in: SSTB QBI is reduced by phaseInProgress, then run through
-  // the non-SSTB phase-in formula on the reduced amounts.
+  // Phase-in (Form 8995-A Schedule A): SSTB-applicable percentage =
+  // 1 - phaseInProgress. Reduce QBI / W-2 / UBIA by that ratio, then
+  // apply the non-SSTB W-2/UBIA limit at the **above-threshold** rule
+  // — NOT the phase-in formula again. Per Reg §1.199A-5(a)(2).
   const sstbApplicableRatio = new Decimal(1).minus(phaseInProgress);
   const reducedQbi = qbi.times(sstbApplicableRatio);
   const reducedW2 = w2.times(sstbApplicableRatio);
   const reducedUbia = ubia.times(sstbApplicableRatio);
-  return computeNonSstbComponent(reducedQbi, reducedW2, reducedUbia, "phase_in", phaseInProgress);
+  return computeNonSstbComponent(reducedQbi, reducedW2, reducedUbia, "above", 1);
 }
 
 const qbi: TaxCalculator<Input, Output> = {

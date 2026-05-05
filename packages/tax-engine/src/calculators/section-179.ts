@@ -40,7 +40,16 @@ const inputSchema = z
     /** Tax year — drives limit lookup. */
     taxYear: z.number().int().min(2024).max(2026),
   })
-  .strict();
+  .strict()
+  .superRefine((input, ctx) => {
+    if (input.heavySuvCost > input.totalQualifyingCost) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["heavySuvCost"],
+        message: `heavySuvCost (${input.heavySuvCost}) cannot exceed totalQualifyingCost (${input.totalQualifyingCost})`,
+      });
+    }
+  });
 
 type Input = z.infer<typeof inputSchema>;
 

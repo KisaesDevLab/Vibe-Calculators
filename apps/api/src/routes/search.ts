@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { desc, ilike, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
 import { clients, engagements, calculations, type Database } from "@vibe-calc/db";
 import { requirePermission } from "../middleware/auth.js";
 
@@ -24,6 +24,10 @@ interface SearchHit {
   title: string;
   subtitle: string;
   updatedAt: string;
+  /** Parent engagement (calculation hits) for navigation. */
+  engagementId?: string | null;
+  /** Parent client (calculation + engagement hits). */
+  clientId?: string | null;
 }
 
 const PER_BUCKET = 8;
@@ -39,28 +43,36 @@ export function buildSearchRouter(deps: SearchRouteDeps): Router {
     }
     const like = `%${q}%`;
 
+    // Always exclude archived rows from cmd-K — surfacing archived
+    // entities in search would lead a user to land on a "you can't
+    // edit this" page with no clue why.
     const [clientRows, engagementRows, calculationRows] = await Promise.all([
       deps.db
         .select()
         .from(clients)
-        .where(or(ilike(clients.name, like), ilike(clients.ein, like))!)
+        .where(
+          and(isNull(clients.archivedAt), or(ilike(clients.name, like), ilike(clients.ein, like))!),
+        )
         .orderBy(desc(clients.updatedAt))
         .limit(PER_BUCKET),
       deps.db
         .select()
         .from(engagements)
-        .where(ilike(engagements.name, like))
+        .where(and(isNull(engagements.archivedAt), ilike(engagements.name, like)))
         .orderBy(desc(engagements.updatedAt))
         .limit(PER_BUCKET),
       deps.db
         .select()
         .from(calculations)
         .where(
-          or(
-            ilike(calculations.name, like),
-            // Substring search inside the JSONB inputs (case-insensitive cast).
-            sql`${calculations.inputsJson}::text ILIKE ${like}` satisfies SQL,
-          )!,
+          and(
+            isNull(calculations.archivedAt),
+            or(
+              ilike(calculations.name, like),
+              // Substring search inside the JSONB inputs (case-insensitive cast).
+              sql`${calculations.inputsJson}::text ILIKE ${like}` satisfies SQL,
+            )!,
+          ),
         )
         .orderBy(desc(calculations.updatedAt))
         .limit(PER_BUCKET),
@@ -80,6 +92,7 @@ export function buildSearchRouter(deps: SearchRouteDeps): Router {
         title: e.name,
         subtitle: `${e.engagementType}${e.taxYear ? ` · ${e.taxYear}` : ""} · ${e.status}`,
         updatedAt: e.updatedAt.toISOString(),
+        clientId: e.clientId,
       })),
       ...calculationRows.map((c) => ({
         kind: "calculation" as const,
@@ -87,6 +100,8 @@ export function buildSearchRouter(deps: SearchRouteDeps): Router {
         title: c.name,
         subtitle: `${c.kind} · ${c.status}`,
         updatedAt: c.updatedAt.toISOString(),
+        engagementId: c.engagementId,
+        clientId: c.clientId,
       })),
     ];
 
