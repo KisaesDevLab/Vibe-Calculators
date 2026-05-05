@@ -9,8 +9,10 @@ import {
   type ComputeMethod,
   type DayCountConvention,
 } from "@vibe-calc/calc-engine";
+import type { Database } from "@vibe-calc/db";
 import { scheduleToPdf, scheduleToCsv, scheduleToXlsx, scheduleToDocx } from "@vibe-calc/pdf";
 import { problem } from "../middleware/auth.js";
+import { loadFirmSettings, composeBrandedFooter } from "../lib/firm-settings.js";
 
 /**
  * Phase 13 — workbench PDF endpoint.
@@ -97,9 +99,14 @@ const bodySchema = z.object({
   watermark: z.string().optional(),
 });
 
-// Phase 13 workbench/pdf endpoint is purely compute — no DB / KMS
-// dependencies. The route is mounted with `buildWorkbenchRouter()`
-// directly; we don't intersect a deps type into ServerOptions.
+/**
+ * Phase 13.3 — the export endpoints now read firm-settings to brand
+ * the PDF / DOCX headers and footers. Pass the same Drizzle handle
+ * the rest of the auth-aware routes use.
+ */
+export interface WorkbenchRouteDeps {
+  db?: Database;
+}
 
 /** Parse + validate the workbench body and run the engine. Returns
  *  either the computed schedule (and the original parsed body) or an
@@ -181,8 +188,9 @@ async function buildScheduleFromBody(body: unknown): Promise<ScheduleBuildResult
   }
 }
 
-export function buildWorkbenchRouter(): Router {
+export function buildWorkbenchRouter(deps: WorkbenchRouteDeps = {}): Router {
   const router = Router();
+  const db = deps.db;
 
   router.post("/pdf", async (req: Request, res: Response) => {
     if (!req.user) return problem(res, 401, "Unauthorized", "Authentication required");
@@ -245,15 +253,19 @@ export function buildWorkbenchRouter(): Router {
     // today when the operator left the workbench field blank.
     const preparedOn = loanDetails.preparedOn ? new Date(loanDetails.preparedOn) : new Date();
 
+    const firm = db ? await loadFirmSettings(db) : null;
+
     let buf: Buffer;
     try {
-      const footer = composeFooter(loanDetails);
+      const operatorFooter = composeFooter(loanDetails);
+      const brandedFooter = composeBrandedFooter(firm, operatorFooter);
       buf = await scheduleToPdf(schedule, {
         calculationLabel: master.label,
         preparedBy: loanDetails.preparedBy ?? req.user.name,
         preparedOn,
         ...(parsed.data.watermark ? { watermark: parsed.data.watermark } : {}),
-        ...(footer ? { firmFooter: footer } : {}),
+        ...(brandedFooter ? { firmFooter: brandedFooter } : {}),
+        ...(firm?.firmName ? { firmName: firm.firmName } : {}),
       });
     } catch (err) {
       return problem(
@@ -308,6 +320,7 @@ export function buildWorkbenchRouter(): Router {
         result.issues ? { issues: result.issues } : undefined,
       );
     }
+    const firmDocx = db ? await loadFirmSettings(db) : null;
     let buf: Buffer;
     try {
       const preparedOn = result.data.loanDetails.preparedOn
@@ -317,6 +330,7 @@ export function buildWorkbenchRouter(): Router {
         calculationLabel: result.data.master.label,
         preparedBy: result.data.loanDetails.preparedBy ?? req.user.name,
         preparedOn,
+        ...(firmDocx?.firmName ? { firmName: firmDocx.firmName } : {}),
         ...(result.data.loanDetails.notes ? { narrative: result.data.loanDetails.notes } : {}),
       });
     } catch (err) {
@@ -351,10 +365,12 @@ export function buildWorkbenchRouter(): Router {
         result.issues ? { issues: result.issues } : undefined,
       );
     }
+    const firmXlsx = db ? await loadFirmSettings(db) : null;
     let buf: Buffer;
     try {
       buf = await scheduleToXlsx(result.schedule, {
         calculationLabel: result.data.master.label,
+        ...(firmXlsx?.firmName ? { firmName: firmXlsx.firmName } : {}),
       });
     } catch (err) {
       return problem(

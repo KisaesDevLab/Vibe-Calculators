@@ -92,6 +92,13 @@
       "when": 1778356800000,
       "tag": "0012_totp_replay_protection",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1778443200000,
+      "tag": "0013_firm_settings",
+      "breakpoints": true
     }
   ]
 }

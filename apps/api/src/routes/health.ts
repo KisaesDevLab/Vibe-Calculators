@@ -7,6 +7,9 @@ export interface HealthDependencies {
   pingDb: () => Promise<{ connected: boolean; error?: string }>;
   pingRedis: () => Promise<{ connected: boolean; error?: string }>;
   getVersion: () => { version: string; gitSha: string };
+  /** Phase 25.9 — deep checks. Optional so the basic /api/health
+   *  works in tests that don't supply a real DB / Redis client. */
+  deepCheck?: () => Promise<DeepHealth>;
 }
 
 export interface HealthResponse {
@@ -15,6 +18,24 @@ export interface HealthResponse {
   gitSha: string;
   dbConnected: boolean;
   redisConnected: boolean;
+}
+
+export interface DeepCheckEntry {
+  ok: boolean;
+  detail?: string;
+  elapsedMs?: number;
+}
+
+export interface DeepHealth {
+  status: "ok" | "degraded";
+  version: string;
+  gitSha: string;
+  checks: {
+    dbReadWrite: DeepCheckEntry;
+    redisPing: DeepCheckEntry;
+    schemaVersion: DeepCheckEntry;
+    queueDepth?: DeepCheckEntry;
+  };
 }
 
 /**
@@ -41,6 +62,21 @@ export function buildHealthRouter(
       dbConnected: dbResult.connected,
       redisConnected: redisResult.connected,
     });
+  });
+
+  // Phase 25.9 — deep health check. Used by Caddy active health
+  // checks and by `just doctor`. Returns 200 only when every probe
+  // is green; degraded probes return 503 with per-check detail.
+  router.get("/deep", async (_req: Request, res: Response) => {
+    if (!deps.deepCheck) {
+      res.status(503).json({
+        status: "degraded",
+        error: "deep checks not configured",
+      });
+      return;
+    }
+    const result = await deps.deepCheck();
+    res.status(result.status === "ok" ? 200 : 503).json(result);
   });
 
   return router;

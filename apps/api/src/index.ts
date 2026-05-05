@@ -17,6 +17,7 @@ const { sealerFrom } = await import("./lib/totp.js");
 const { createRateLimiter, redisStore } = await import("./lib/rate-limit.js");
 const { Redis } = await import("ioredis");
 const { createEmailProviderFromEnv } = await import("@vibe-calc/email");
+const { runDeepHealth } = await import("./lib/deep-health.js");
 
 // Side-effect imports: importing @vibe-calc/tax-engine triggers each
 // calculator module's registerCalculator() call, populating the global
@@ -123,8 +124,24 @@ const emitMagicLinkEmail = async (input: {
   );
 };
 
+// Number of migration tags shipped with this release; bumped each
+// time a new file lands in packages/db/drizzle/. The deep-health
+// schema-version probe asserts the applied count matches.
+const EXPECTED_MIGRATIONS = 14; // 0000..0013
+
 const app = createApp({
-  health: { pingDb: pingDatabase, pingRedis, getVersion: getVersionInfo },
+  health: {
+    pingDb: pingDatabase,
+    pingRedis,
+    getVersion: getVersionInfo,
+    deepCheck: () =>
+      runDeepHealth({
+        pool,
+        redis: rateLimitRedis,
+        expectedMigrations: EXPECTED_MIGRATIONS,
+        ...(process.env.VIBE_QUEUE_PREFIX ? { queuePrefix: process.env.VIBE_QUEUE_PREFIX } : {}),
+      }),
+  },
   auth: {
     middleware: { db, env: { VIBE_DEPLOY_MODE: env.VIBE_DEPLOY_MODE } },
     routes: {

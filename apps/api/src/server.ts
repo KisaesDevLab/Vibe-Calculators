@@ -27,6 +27,7 @@ import { buildWebhooksRouter, type WebhooksRouteDeps } from "./routes/webhooks.j
 import { buildCalculatorsRouter, type CalculatorsRouteDeps } from "./routes/calculators.js";
 import { buildWorkbenchRouter } from "./routes/workbench.js";
 import { buildAdminAiRouter, type AdminAiRouteDeps } from "./routes/admin-ai.js";
+import { buildFirmSettingsRouter, type FirmSettingsRouteDeps } from "./routes/firm-settings.js";
 import { buildOpenApiRouter } from "./routes/openapi.js";
 import { loadSession, type AuthMiddlewareOptions } from "./middleware/auth.js";
 
@@ -53,7 +54,8 @@ export interface ServerOptions {
       ApiKeysRouteDeps &
       WebhooksRouteDeps &
       CalculatorsRouteDeps &
-      AdminAiRouteDeps;
+      AdminAiRouteDeps &
+      FirmSettingsRouteDeps;
   };
 }
 
@@ -98,8 +100,9 @@ export function createApp(options: ServerOptions = {}): Express {
     app.use("/api/v1/queue", buildQueueRouter(options.auth.routes));
     app.use("/api/v1/bulk", buildBulkRouter(options.auth.routes));
     app.use("/api/v1/calculators", buildCalculatorsRouter(options.auth.routes));
-    app.use("/api/v1/workbench", buildWorkbenchRouter());
+    app.use("/api/v1/workbench", buildWorkbenchRouter({ db: options.auth.routes.db }));
     app.use("/api/v1/admin/ai", buildAdminAiRouter(options.auth.routes));
+    app.use("/api/v1/admin/firm-settings", buildFirmSettingsRouter(options.auth.routes));
   }
 
   // Final RFC 7807 error handler — never leak stack traces or

@@ -5,6 +5,7 @@ import type { Database, TaxTableKind, ResolvedTaxRow } from "@vibe-calc/db";
 import { resolveTaxRows } from "@vibe-calc/db";
 import { calculatorMemoToPdf } from "@vibe-calc/pdf";
 import { problem } from "../middleware/auth.js";
+import { loadFirmSettings, composeBrandedFooter } from "../lib/firm-settings.js";
 
 /**
  * Phase 15.3 / 15.4 — registry-driven HTTP surface.
@@ -209,9 +210,11 @@ export function buildCalculatorsRouter(deps: CalculatorsRouteDeps): Router {
         calc.metadata.requiredTables.map((k) => ({ kind: k, asOf })),
       );
     }
+    const firm = await loadFirmSettings(deps.db);
     try {
       const output = calc.compute(validation.value, { asOf, tables });
       const narrative = calc.narrate(validation.value, output, { asOf, tables });
+      const brandedFooter = composeBrandedFooter(firm, undefined);
       const buf = await calculatorMemoToPdf({
         kind,
         name: calc.metadata.name,
@@ -222,6 +225,8 @@ export function buildCalculatorsRouter(deps: CalculatorsRouteDeps): Router {
         formReferences: calc.metadata.formReferences,
         preparedBy: req.user.name,
         preparedOn: asOf,
+        ...(firm?.firmName ? { firmName: firm.firmName } : {}),
+        ...(brandedFooter ? { firmFooter: brandedFooter } : {}),
       });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader(

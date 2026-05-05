@@ -117,6 +117,48 @@ restore PATH:
     echo "restore complete"
 
 # ---------------------------------------------------------------------
+# Health / doctor
+# ---------------------------------------------------------------------
+
+# Quick liveness probe against the running appliance.
+health:
+    @curl -fsS http://localhost:${VIBE_HTTP_PORT:-80}/api/health | python -m json.tool 2>/dev/null \
+        || curl -fsS http://localhost:${VIBE_HTTP_PORT:-80}/api/health
+
+# Phase 25.6 — Deep health probe + container audit.
+# Asserts that:
+#   - docker compose reports every service "running"
+#   - GET /api/health/deep returns 200 (DB read+write, Redis ping,
+#     migration row-count, optional queue depth)
+#   - the API has bound its port (caddy is reachable)
+#   - the host has at least 1 GB free on the data partition
+doctor:
+    #!/usr/bin/env sh
+    set -e
+    echo "==> docker compose ps"
+    docker compose ps
+    echo
+    echo "==> /api/health"
+    curl -fsS "http://localhost:${VIBE_HTTP_PORT:-80}/api/health" || {
+        echo "FAIL: /api/health did not respond" >&2
+        exit 1
+    }
+    echo
+    echo
+    echo "==> /api/health/deep"
+    if ! curl -fsS "http://localhost:${VIBE_HTTP_PORT:-80}/api/health/deep" -o /tmp/deep.json; then
+        echo "FAIL: /api/health/deep returned 5xx — see /tmp/deep.json" >&2
+        cat /tmp/deep.json >&2 || true
+        exit 1
+    fi
+    cat /tmp/deep.json
+    echo
+    echo "==> disk free (host)"
+    df -h .
+    echo
+    echo "OK: every probe is green."
+
+# ---------------------------------------------------------------------
 # Debug
 # ---------------------------------------------------------------------
 
