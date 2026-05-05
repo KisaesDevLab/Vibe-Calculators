@@ -89,8 +89,9 @@ COMMANDS
   status       Show container status + API health.
   mode <m>     Switch deploy mode: lan | domain | tailscale.
   doctor       Run health probes against the running stack.
-  backup       Snapshot DB + uploads to ./backups/.
-  restore <p>  Restore from a backup directory (DESTRUCTIVE).
+  backup       Snapshot DB + uploads to ./backups/ (AES-256-CBC encrypted by default).
+               Pass --plaintext to skip encryption (debugging only).
+  restore <p>  Restore from a backup directory; auto-detects .enc files (DESTRUCTIVE).
 
 ENVIRONMENT
   VIBE_REPO_DIR   Path to the repo (default: directory of this script).
@@ -310,7 +311,7 @@ async function cmdDoctor() {
   return 0;
 }
 
-async function cmdBackup() {
+async function cmdBackup(args = []) {
   ensureDocker();
   const repoDir = DEFAULT_REPO_DIR;
   const env = readEnvIfPresent(join(repoDir, ".env"));
@@ -318,6 +319,12 @@ async function cmdBackup() {
     .toISOString()
     .replace(/[-:]/g, "")
     .replace(/\.\d+Z$/, "Z");
+  // Phase 25.7 — encrypted by default. `--plaintext` falls back to
+  // the unencrypted dump for ops debugging only.
+  const plaintext = args.includes("--plaintext");
+  const passphrase = (env.VIBE_BACKUP_PASSPHRASE ?? process.env.VIBE_BACKUP_PASSPHRASE ?? "")
+    .trim()
+    .replace(/^"|"$/g, "");
   // Backups land in the `backups` Docker volume so the API container
   // (mount: /data/backups, ro) can list them for the restore wizard.
   // We also keep a host-side copy under ./backups/ for offsite sync.
@@ -360,8 +367,67 @@ async function cmdBackup() {
     createdAt: ts,
     postgresUser: user,
     postgresDb: db,
+    encrypted: !plaintext,
   };
   writeFileSync(join(hostOut, "manifest.json"), JSON.stringify(manifest, null, 2));
+
+  // Phase 25.7 — AES-256-CBC encrypt with PBKDF2 key derivation
+  // before snapshotting into the backup volume. Passphrase comes
+  // from VIBE_BACKUP_PASSPHRASE; missing passphrase blocks unless
+  // --plaintext was passed.
+  if (!plaintext) {
+    if (!passphrase) {
+      console.error(
+        "Encrypted backup requires VIBE_BACKUP_PASSPHRASE in .env or env. Pass --plaintext to skip (NOT recommended for off-site storage).",
+      );
+      return 1;
+    }
+    console.log("→ AES-256-CBC encrypt pgdump.bin + pdf-output.tgz");
+    for (const f of ["pgdump.bin", "pdf-output.tgz"]) {
+      const enc = spawnSync(
+        "docker",
+        [
+          "run",
+          "--rm",
+          "-i",
+          "-v",
+          `${hostOut}:/work`,
+          "alpine/openssl",
+          "enc",
+          "-aes-256-cbc",
+          "-md",
+          "sha512",
+          "-pbkdf2",
+          "-iter",
+          "200000",
+          "-salt",
+          "-pass",
+          "stdin",
+          "-in",
+          `/work/${f}`,
+          "-out",
+          `/work/${f}.enc`,
+        ],
+        { cwd: repoDir, input: passphrase, encoding: "utf-8" },
+      );
+      if (enc.status !== 0) {
+        console.error(`encryption failed for ${f}:`, enc.stderr);
+        return 1;
+      }
+      // Drop the unencrypted source after successful encryption so
+      // ./backups/<ts>/ contains only ciphertext.
+      try {
+        const target = join(hostOut, f);
+        // Use Node fs to delete cleanly cross-platform.
+        spawnSync(process.platform === "win32" ? "del" : "rm", ["-f", target], {
+          shell: true,
+          cwd: repoDir,
+        });
+      } catch {
+        // ignore — leftover plaintext is recoverable, not fatal.
+      }
+    }
+  }
 
   console.log(`→ copy snapshot into vibe-calculators_backups volume`);
   run(
@@ -382,7 +448,7 @@ async function cmdBackup() {
     { allowFail: true },
   );
 
-  console.log(`Backup written to ${hostOut}`);
+  console.log(`Backup written to ${hostOut} (${plaintext ? "PLAINTEXT" : "ENCRYPTED"})`);
   return 0;
 }
 
@@ -394,9 +460,60 @@ async function cmdRestore(args) {
     console.error("usage: vibecalc-installer restore <path>");
     return 2;
   }
-  if (!existsSync(join(path, "pgdump.bin")) || !existsSync(join(path, "pdf-output.tgz"))) {
-    console.error(`backup at ${path} is missing pgdump.bin or pdf-output.tgz`);
+  // Detect whether the snapshot is encrypted (.enc) or plaintext.
+  const isEncrypted =
+    existsSync(join(path, "pgdump.bin.enc")) && existsSync(join(path, "pdf-output.tgz.enc"));
+  const isPlaintext =
+    existsSync(join(path, "pgdump.bin")) && existsSync(join(path, "pdf-output.tgz"));
+  if (!isEncrypted && !isPlaintext) {
+    console.error(`backup at ${path} is missing pgdump.bin(.enc) or pdf-output.tgz(.enc)`);
     return 1;
+  }
+  // Decrypt in place if needed. Reads passphrase from env.
+  if (isEncrypted) {
+    const env = readEnvIfPresent(join(repoDir, ".env"));
+    const passphrase = (env.VIBE_BACKUP_PASSPHRASE ?? process.env.VIBE_BACKUP_PASSPHRASE ?? "")
+      .trim()
+      .replace(/^"|"$/g, "");
+    if (!passphrase) {
+      console.error(
+        "Encrypted backup detected but no VIBE_BACKUP_PASSPHRASE configured. Set it in .env or env before restoring.",
+      );
+      return 1;
+    }
+    console.log("→ AES-256-CBC decrypt pgdump.bin.enc + pdf-output.tgz.enc");
+    for (const f of ["pgdump.bin", "pdf-output.tgz"]) {
+      const dec = spawnSync(
+        "docker",
+        [
+          "run",
+          "--rm",
+          "-i",
+          "-v",
+          `${resolve(path)}:/work`,
+          "alpine/openssl",
+          "enc",
+          "-d",
+          "-aes-256-cbc",
+          "-md",
+          "sha512",
+          "-pbkdf2",
+          "-iter",
+          "200000",
+          "-pass",
+          "stdin",
+          "-in",
+          `/work/${f}.enc`,
+          "-out",
+          `/work/${f}`,
+        ],
+        { cwd: repoDir, input: passphrase, encoding: "utf-8" },
+      );
+      if (dec.status !== 0) {
+        console.error(`decryption failed for ${f}.enc:`, dec.stderr);
+        return 1;
+      }
+    }
   }
   // Docker -v parses on `:`. A Windows drive prefix (`C:\...`) and
   // any user-named directory containing a colon would split the

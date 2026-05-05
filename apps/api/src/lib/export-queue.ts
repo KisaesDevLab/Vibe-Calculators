@@ -1,6 +1,7 @@
 import { Queue, Worker, type ConnectionOptions } from "bullmq";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { eq, lte, and, isNotNull } from "drizzle-orm";
 import {
   generateSchedule,
@@ -381,10 +382,21 @@ async function renderForKind(
         ? "DRAFT — Not for Distribution"
         : undefined;
 
+  // Phase 21.7 — caller-supplied signature metadata (approver name +
+  // content hash). Threaded through `options` so the export route can
+  // populate these for already-approved calcs without re-querying.
+  const signature: { approverName?: string; contentHash?: string } = {};
+  if (typeof options.approverName === "string" && options.approverName.length > 0) {
+    signature.approverName = options.approverName;
+  }
+  if (options.signed === true) {
+    signature.contentHash = calcContentHash(inp, out);
+  }
+
   switch (exportKind) {
     case "tvm-pdf":
     case "memo-pdf":
-      return renderSingleCalc(calcKind, name, inp, out, branding, watermark);
+      return renderSingleCalc(calcKind, name, inp, out, branding, watermark, signature);
     case "xlsx": {
       const schedule = scheduleFromInputs(inp);
       const buf = await scheduleToXlsx(schedule, {
@@ -411,6 +423,16 @@ async function renderForKind(
   }
 }
 
+/**
+ * Phase 21.7 — canonical SHA-256 of (inputs, outputs). Used as the
+ * "signed PDF" content hash so a recipient can verify the document
+ * matches the audit-log version.
+ */
+function calcContentHash(inputs: unknown, outputs: unknown): string {
+  const canonical = JSON.stringify({ inputs: inputs ?? {}, outputs: outputs ?? {} });
+  return createHash("sha256").update(canonical).digest("hex");
+}
+
 async function renderSingleCalc(
   calcKind: string,
   name: string,
@@ -418,6 +440,7 @@ async function renderSingleCalc(
   outputs: unknown,
   branding: { firmName?: string; firmFooter?: string },
   watermark?: string,
+  signature?: { approverName?: string; contentHash?: string },
 ): Promise<Buffer> {
   const inp = (inputs ?? {}) as Record<string, unknown>;
   const out = (outputs ?? {}) as Record<string, unknown>;
@@ -429,6 +452,8 @@ async function renderSingleCalc(
       preparedOn: new Date(),
       ...branding,
       ...(watermark ? { watermark } : {}),
+      ...(signature?.approverName ? { approverName: signature.approverName } : {}),
+      ...(signature?.contentHash ? { contentHash: signature.contentHash } : {}),
     });
   }
   return calculatorMemoToPdf({
@@ -442,6 +467,8 @@ async function renderSingleCalc(
     preparedOn: new Date(),
     ...branding,
     ...(watermark ? { watermark } : {}),
+    ...(signature?.approverName ? { approverName: signature.approverName } : {}),
+    ...(signature?.contentHash ? { contentHash: signature.contentHash } : {}),
   });
 }
 

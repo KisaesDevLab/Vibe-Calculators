@@ -64,6 +64,10 @@ export interface CalculatorMemoInput {
   firmFooter?: string;
   /** Optional watermark; e.g. "DRAFT — Not for Distribution". */
   watermark?: string;
+  /** Phase 21.7 — signed-PDF approver name (rendered in footer). */
+  approverName?: string;
+  /** Phase 21.7 — SHA-256 of canonical inputs+outputs (rendered in footer). */
+  contentHash?: string;
 }
 
 function formatValue(v: unknown): string {
@@ -149,6 +153,8 @@ export function CalculatorMemoDocument({ input }: { input: CalculatorMemoInput }
 
         <Text style={styles.footer} fixed>
           {input.firmFooter ?? "Computed by Vibe Calculators"} · {input.kind}
+          {input.approverName ? ` · Approved by ${input.approverName}` : ""}
+          {input.contentHash ? ` · sha256:${input.contentHash.slice(0, 12)}…` : ""}
         </Text>
       </Page>
     </Document>

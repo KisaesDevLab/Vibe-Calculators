@@ -374,6 +374,287 @@ export function sinkingFund(input: SinkingFundInput): SinkingFundResult {
   };
 }
 
+// ---------------------------------------------------------------------
+// 9.5 TDR PV-of-future-cash-flows
+// ---------------------------------------------------------------------
+
+/**
+ * TDR (Troubled Debt Restructuring) impairment per ASC 310-40 / ASC
+ * 326. The carrying amount is compared to the present value of the
+ * restructured cash flows discounted at the original effective
+ * interest rate. Impairment = max(0, carrying − PV).
+ */
+export interface TdrInput {
+  /** Pre-restructuring carrying amount (book value) of the loan. */
+  carryingAmount: Money;
+  /** Original effective annual interest rate. */
+  originalEffectiveRate: Rate;
+  /**
+   * Restructured cash flows. Each row is a date + amount (positive
+   * inflow to lender, e.g. payment receipt). The valuation date is
+   * the earliest cash flow's date (or `valuationDate` override).
+   */
+  restructuredFlows: { date: Date; amount: Money }[];
+  /** Optional valuation date; defaults to the first cash flow's date. */
+  valuationDate?: Date;
+  dayCount?: DayCountConvention;
+}
+
+export interface TdrResult {
+  presentValue: Money;
+  impairment: Money;
+  /** PV factor per cash flow (for the disclosure schedule). */
+  schedule: { date: Date; amount: Money; pv: Money }[];
+}
+
+export function tdrImpairment(input: TdrInput): TdrResult {
+  const flows = [...input.restructuredFlows].sort((a, b) => a.date.getTime() - b.date.getTime());
+  if (flows.length === 0) {
+    return {
+      presentValue: money(0),
+      impairment: input.carryingAmount,
+      schedule: [],
+    };
+  }
+  const t0 = input.valuationDate ?? flows[0]!.date;
+  const dc = input.dayCount ?? "30/360";
+  const r = input.originalEffectiveRate;
+  let pvSum = ZERO;
+  const schedule: { date: Date; amount: Money; pv: Money }[] = [];
+  for (const f of flows) {
+    const yf = yearFraction(t0, f.date, dc);
+    const pv = f.amount.div(ONE.plus(r).pow(yf));
+    pvSum = pvSum.plus(pv);
+    schedule.push({ date: f.date, amount: f.amount, pv: money(pv) });
+  }
+  const impairmentDelta = input.carryingAmount.minus(pvSum);
+  return {
+    presentValue: money(pvSum),
+    impairment: money(impairmentDelta.gt(0) ? impairmentDelta : ZERO),
+    schedule,
+  };
+}
+
+// ---------------------------------------------------------------------
+// 9.6 / 9.7 Imputed interest under IRC §7872 (below-market loan)
+// ---------------------------------------------------------------------
+
+/**
+ * Imputed interest on a below-market or interest-free loan per IRC
+ * §7872. The "foregone interest" is the difference between (a) what
+ * the AFR would have produced and (b) what was actually charged.
+ *
+ * For demand loans: imputed interest is calculated using the
+ * blended annual rate (still the AFR).
+ *
+ * For term loans: the present-value approach — discount the actual
+ * payment stream at the AFR; the difference between principal and
+ * PV is the §7872 OID treated as imputed interest spread over the
+ * loan term using the constant-yield method.
+ */
+export interface ImputedInterestInput {
+  /** Loan principal amount. */
+  principal: Money;
+  /** Term in years. */
+  termYears: number;
+  /** Applicable Federal Rate (annual nominal). */
+  afr: Rate;
+  /** Stated rate on the loan (0 for interest-free). */
+  statedRate: Rate;
+  /** Payments per year for the stated-rate stream. */
+  paymentsPerYear: number;
+  /** "demand" loans use the blended-AFR shortcut; "term" loans use PV. */
+  loanType: "term" | "demand";
+}
+
+export interface ImputedInterestResult {
+  /** Annual foregone interest = principal × (afr − statedRate). */
+  annualForegoneInterest: Money;
+  /** Total imputed interest over the term. */
+  totalImputedInterest: Money;
+  /** PV of the actual payment stream at the AFR (term loans only). */
+  presentValueAtAfr: Money | null;
+  /** OID = principal − PV (term loans only; null for demand). */
+  originalIssueDiscount: Money | null;
+}
+
+export function imputedInterest7872(input: ImputedInterestInput): ImputedInterestResult {
+  const annualForegone = input.principal.times(input.afr.minus(input.statedRate));
+  if (input.loanType === "demand") {
+    // Demand loan: interest is recomputed each year at the blended AFR.
+    return {
+      annualForegoneInterest: money(annualForegone),
+      totalImputedInterest: money(annualForegone.times(input.termYears)),
+      presentValueAtAfr: null,
+      originalIssueDiscount: null,
+    };
+  }
+  // Term loan PV: stated-rate periodic payment, discounted at AFR.
+  const ppy = input.paymentsPerYear;
+  const n = Math.round(input.termYears * ppy);
+  const periodStated = input.statedRate.div(ppy);
+  const periodAfr = input.afr.div(ppy);
+  // Actual periodic payment under the stated rate.
+  let periodicPayment: Decimal;
+  if (periodStated.eq(0)) {
+    periodicPayment = input.principal.div(n);
+  } else {
+    periodicPayment = input.principal
+      .times(periodStated)
+      .div(ONE.minus(ONE.plus(periodStated).pow(-n)));
+  }
+  // PV at AFR.
+  let pv: Decimal;
+  if (periodAfr.eq(0)) {
+    pv = periodicPayment.times(n);
+  } else {
+    pv = periodicPayment.times(ONE.minus(ONE.plus(periodAfr).pow(-n))).div(periodAfr);
+  }
+  const oid = input.principal.minus(pv);
+  return {
+    annualForegoneInterest: money(annualForegone),
+    totalImputedInterest: money(annualForegone.times(input.termYears)),
+    presentValueAtAfr: money(pv),
+    originalIssueDiscount: money(oid),
+  };
+}
+
+// ---------------------------------------------------------------------
+// 9.9 Lease rate factor / implicit rate solver
+// ---------------------------------------------------------------------
+
+/**
+ * Lease "rate factor" = monthly payment ÷ equipment cost. Equipment-
+ * lease quoting standard. The implicit rate is recovered by solving
+ * for the IRR that equates PV of lease payments + residual to the
+ * equipment cost.
+ */
+export interface LeaseRateFactorInput {
+  /** Equipment cost (lessor's investment). */
+  equipmentCost: Money;
+  /** Monthly lease payment. */
+  monthlyPayment: Money;
+  /** Term in months. */
+  termMonths: number;
+  /** Residual value at end of term. */
+  residualValue: Money;
+  /** Annuity-due (1) for advance payments common in equipment leases. */
+  paymentTiming?: 0 | 1;
+}
+
+export interface LeaseRateFactorResult {
+  /** Quoted rate factor: payment / cost. */
+  rateFactor: Decimal;
+  /** Implicit annual rate (nominal, compounded monthly). */
+  implicitAnnualRate: Rate;
+}
+
+export function leaseRateFactor(input: LeaseRateFactorInput): LeaseRateFactorResult {
+  const factor = input.monthlyPayment.div(input.equipmentCost);
+  const flows: CashFlow[] = [];
+  // Lessor outlay at t=0 (negative).
+  const t0 = new Date(Date.UTC(2000, 0, 1));
+  flows.push({ date: t0, amount: money(input.equipmentCost.negated()) });
+  for (let k = 1; k <= input.termMonths; k++) {
+    const monthOffset = (input.paymentTiming ?? 0) === 1 ? k - 1 : k;
+    const date = new Date(Date.UTC(2000, 0, 1 + 30 * monthOffset));
+    flows.push({ date, amount: input.monthlyPayment });
+  }
+  if (input.residualValue.gt(0)) {
+    flows.push({
+      date: new Date(Date.UTC(2000, 0, 1 + 30 * input.termMonths)),
+      amount: input.residualValue,
+    });
+  }
+  const annualIrr = irr(flows, "30/360");
+  // `irr` already returns an annualized rate (yearFraction of each
+  // period rolls up into the discounting); no need to multiply.
+  return {
+    rateFactor: factor,
+    implicitAnnualRate: annualIrr ?? rate("0"),
+  };
+}
+
+// ---------------------------------------------------------------------
+// 9.10 Note buy/sell yield
+// ---------------------------------------------------------------------
+
+/**
+ * Yield to a buyer who purchases an existing note for less than its
+ * book value, or to a seller who discounts the note. Common in
+ * private-credit secondary-market analysis.
+ */
+export interface NoteBuySellInput {
+  /** Remaining principal balance at purchase. */
+  remainingBalance: Money;
+  /** Stated periodic payment going forward. */
+  payment: Money;
+  /** Number of remaining payments. */
+  remainingPayments: number;
+  /** Payments per year. */
+  paymentsPerYear: number;
+  /** Purchase price paid for the note (typically &lt; remainingBalance). */
+  purchasePrice: Money;
+  /** Optional balloon at end. */
+  balloon?: Money;
+}
+
+export interface NoteBuySellResult {
+  /** Yield to the buyer (annual nominal rate). */
+  buyerYield: Rate;
+  /** Discount as percentage of remaining balance. */
+  discountPct: Decimal;
+}
+
+export function noteBuySellYield(input: NoteBuySellInput): NoteBuySellResult {
+  // Solve for periodic rate r where:
+  //   purchasePrice = payment × [1 − (1+r)^(−n)] / r + balloon × (1+r)^(−n)
+  // Using Newton-Raphson with a sensible seed.
+  const n = input.remainingPayments;
+  const p = input.payment;
+  const balloon = input.balloon ?? money(0);
+  const target = input.purchasePrice;
+  const f = (r: Decimal): Decimal => {
+    if (r.eq(0)) return p.times(n).plus(balloon).minus(target);
+    const ann = ONE.minus(ONE.plus(r).pow(-n)).div(r);
+    return p
+      .times(ann)
+      .plus(balloon.times(ONE.plus(r).pow(-n)))
+      .minus(target);
+  };
+  const fp = (r: Decimal): Decimal => {
+    if (r.eq(0)) return p.times(n).times(-(n + 1) / 2);
+    const oneMinus = ONE.minus(ONE.plus(r).pow(-n));
+    const term1 = p
+      .times(
+        new Decimal(n)
+          .times(ONE.plus(r).pow(-n - 1))
+          .times(r)
+          .minus(oneMinus),
+      )
+      .div(r.pow(2));
+    const term2 = balloon.times(-n).times(ONE.plus(r).pow(-n - 1));
+    return term1.plus(term2);
+  };
+  let r = new Decimal(0.01);
+  for (let iter = 0; iter < 60; iter++) {
+    const fv = f(r);
+    if (fv.abs().lt(1e-10)) break;
+    const fpv = fp(r);
+    if (fpv.eq(0)) break;
+    r = r.minus(fv.div(fpv));
+    if (r.lte(-0.99)) r = new Decimal(-0.5);
+    if (r.gte(10)) r = new Decimal(1);
+  }
+  const annualYield = r.times(input.paymentsPerYear);
+  const remainingBalance = input.remainingBalance;
+  const discount = remainingBalance.minus(input.purchasePrice).div(remainingBalance);
+  return {
+    buyerYield: rate(annualYield),
+    discountPct: discount,
+  };
+}
+
 // Re-export solveForI so consumers can build their own solve-for-rate
 // templates without re-importing.
 export { solveForI };
