@@ -34,6 +34,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Build first so composite-project references resolve. Several
+      # workspace tsconfigs reference others' `dist/` (e.g. pdf →
+      # calc-engine), which doesn't exist on a fresh checkout. Local
+      # dev never hits this because the dist folders persist; CI does.
+      - name: Build
+        run: pnpm build
+
       - name: Lint
         run: pnpm lint
 
@@ -42,9 +49,6 @@ jobs:
 
       - name: Test
         run: pnpm test
-
-      - name: Build
-        run: pnpm build
 
       - name: Format check (root only)
         run: pnpm format:check
