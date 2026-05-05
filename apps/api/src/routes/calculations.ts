@@ -3,6 +3,7 @@ import { and, desc, eq, isNull, isNotNull, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { calculations, type Database } from "@vibe-calc/db";
 import { problem, requirePermission } from "../middleware/auth.js";
+import { permittedCalculationIds, userOwnsCalculation } from "../lib/ownership.js";
 
 /**
  * Phase 20 — calculations CRUD lite.
@@ -129,8 +130,14 @@ export function buildCalculationsRouter(deps: CalculationRouteDeps): Router {
   });
 
   router.get("/:id", requirePermission("calculation:read"), async (req: Request, res: Response) => {
+    if (!req.user) return problem(res, 401, "Unauthorized", "Authentication required");
     const id = readIdParam(req);
     if (!id) return problem(res, 400, "Bad request", "Missing id");
+    if (
+      !(await userOwnsCalculation({ db: deps.db, userId: req.user.id, role: req.user.role }, id))
+    ) {
+      return problem(res, 404, "Not found", "Calculation not found");
+    }
     const [row] = await deps.db.select().from(calculations).where(eq(calculations.id, id)).limit(1);
     if (!row) return problem(res, 404, "Not found", "Calculation not found");
     res.json({ calculation: serialize(row), inputs: row.inputsJson, outputs: row.outputsJson });
@@ -140,8 +147,14 @@ export function buildCalculationsRouter(deps: CalculationRouteDeps): Router {
     "/:id/archive",
     requirePermission("calculation:archive"),
     async (req: Request, res: Response) => {
+      if (!req.user) return problem(res, 401, "Unauthorized", "Authentication required");
       const id = readIdParam(req);
       if (!id) return problem(res, 400, "Bad request", "Missing id");
+      if (
+        !(await userOwnsCalculation({ db: deps.db, userId: req.user.id, role: req.user.role }, id))
+      ) {
+        return problem(res, 404, "Not found", "Calculation not found or already archived");
+      }
       const [row] = await deps.db
         .update(calculations)
         .set({ archivedAt: new Date(), updatedAt: new Date() })
@@ -156,8 +169,14 @@ export function buildCalculationsRouter(deps: CalculationRouteDeps): Router {
     "/:id/restore",
     requirePermission("calculation:archive"),
     async (req: Request, res: Response) => {
+      if (!req.user) return problem(res, 401, "Unauthorized", "Authentication required");
       const id = readIdParam(req);
       if (!id) return problem(res, 400, "Bad request", "Missing id");
+      if (
+        !(await userOwnsCalculation({ db: deps.db, userId: req.user.id, role: req.user.role }, id))
+      ) {
+        return problem(res, 404, "Not found", "Calculation not found or not archived");
+      }
       const [row] = await deps.db
         .update(calculations)
         .set({ archivedAt: null, updatedAt: new Date() })
@@ -168,17 +187,27 @@ export function buildCalculationsRouter(deps: CalculationRouteDeps): Router {
     },
   );
 
-  // Phase 20.7 — bulk archive.
+  // Phase 20.7 — bulk archive. IDOR-scoped: only the caller's permitted
+  // ids actually flip; non-permitted ids are silently ignored (the
+  // response surfaces requested vs archivedIds so the caller can detect).
   router.post(
     "/bulk/archive",
     requirePermission("calculation:archive"),
     async (req: Request, res: Response) => {
+      if (!req.user) return problem(res, 401, "Unauthorized", "Authentication required");
       const parsed = bulkArchiveSchema.safeParse(req.body);
       if (!parsed.success) return problem(res, 400, "Bad request", "Invalid body");
+      const permitted = await permittedCalculationIds(
+        { db: deps.db, userId: req.user.id, role: req.user.role },
+        parsed.data.ids,
+      );
+      if (permitted.length === 0) {
+        return res.json({ archivedIds: [], requested: parsed.data.ids.length });
+      }
       const updated = await deps.db
         .update(calculations)
         .set({ archivedAt: new Date(), updatedAt: new Date() })
-        .where(and(inArray(calculations.id, parsed.data.ids), isNull(calculations.archivedAt)))
+        .where(and(inArray(calculations.id, permitted), isNull(calculations.archivedAt)))
         .returning({ id: calculations.id });
       res.json({ archivedIds: updated.map((r) => r.id), requested: parsed.data.ids.length });
     },

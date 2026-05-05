@@ -60,6 +60,17 @@ function isSafeWebhookUrl(raw: string): boolean {
   if (host === "localhost" || host === "ip6-localhost" || host === "ip6-loopback") return false;
   if (host === "169.254.169.254") return false; // AWS / GCP metadata
   if (host === "metadata.google.internal") return false;
+
+  // Refuse encoded IPv4 forms — `0177.0.0.1` (octal), `0x7f.0.0.1`
+  // (hex), `2130706433` (integer 127.0.0.1). Rather than parse each
+  // form, reject any host whose first character is `0` followed by
+  // digits, hex, or `x` — these are not legitimate hostnames and
+  // disallowing them prevents bypass attempts. Also reject pure-
+  // numeric hosts (integer-form IPs).
+  if (/^0[0-7]+(\.|$)/.test(host)) return false; // octal IPv4
+  if (/^0x[0-9a-f]+(\.|$)/.test(host)) return false; // hex IPv4
+  if (/^\d+$/.test(host)) return false; // integer-form IPv4
+
   const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (ipv4) {
     const a = Number(ipv4[1]);

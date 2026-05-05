@@ -9,6 +9,8 @@ const baseEnv: NodeJS.ProcessEnv = {
   LOG_LEVEL: "info",
   VIBE_DEPLOY_MODE: "lan",
   VIBE_OFFLINE: "false",
+  // 32-byte base64 key — production NODE_ENV requires it.
+  VIBE_KMS_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd==",
 };
 
 describe("parseEnv", () => {

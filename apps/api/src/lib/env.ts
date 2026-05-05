@@ -65,6 +65,18 @@ const envSchema = z
         });
       }
     }
+    // VIBE_KMS_KEY is required in production: the TOTP enrollment
+    // flow stores AES-GCM-sealed secrets, and a missing key causes
+    // a 500 on the FIRST 2FA setup. Better to refuse boot than to
+    // silently allow a fragile production deploy.
+    if (env.NODE_ENV === "production" && (!env.VIBE_KMS_KEY || env.VIBE_KMS_KEY.length < 32)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["VIBE_KMS_KEY"],
+        message:
+          "VIBE_KMS_KEY (≥32-byte base64) is required in production. Generate via `openssl rand -base64 32`.",
+      });
+    }
   });
 
 export type Env = z.infer<typeof envSchema>;

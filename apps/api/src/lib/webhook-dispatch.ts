@@ -1,4 +1,5 @@
 import { createHmac } from "node:crypto";
+import { lookup } from "node:dns/promises";
 import { and, eq, isNull } from "drizzle-orm";
 import { webhookSubscriptions, type Database } from "@vibe-calc/db";
 
@@ -61,6 +62,42 @@ export async function dispatchWebhook(
   for (const sub of matching) {
     const t = Math.floor(now.getTime() / 1000);
     const sig = createHmac("sha256", sub.secret).update(`${t}.${body}`).digest("hex");
+    // DNS-rebinding defense: resolve the URL's hostname NOW and
+    // validate every resolved IP against the same private-IP
+    // deny-list the create-time SSRF guard uses. A hostname like
+    // `evil.com` that flips to `127.0.0.1` between create-time
+    // validation and dispatch-time fetch would otherwise bypass
+    // the guard. Skipped for the test stub-fetcher (input.fetcher
+    // override) so unit tests don't need network.
+    if (!input.fetcher) {
+      try {
+        const url = new URL(sub.url);
+        const records = await lookup(url.hostname, { all: true });
+        const allSafe = records.every((r) => isPublicAddr(r.address));
+        if (!allSafe) {
+          failures++;
+          await db
+            .update(webhookSubscriptions)
+            .set({
+              lastFailureMessage: `DNS-rebinding guard: hostname resolved to private/loopback address`,
+              lastFiredAt: now,
+            })
+            .where(and(eq(webhookSubscriptions.id, sub.id)));
+          continue;
+        }
+      } catch (err) {
+        failures++;
+        await db
+          .update(webhookSubscriptions)
+          .set({
+            lastFailureMessage: err instanceof Error ? err.message : String(err),
+            lastFiredAt: now,
+          })
+          .where(and(eq(webhookSubscriptions.id, sub.id)));
+        continue;
+      }
+    }
+
     // Per-call hard timeout — defense against a slow / malicious /
     // unreachable webhook target hanging the dispatcher loop.
     const ctrl = new AbortController();
@@ -75,6 +112,11 @@ export async function dispatchWebhook(
         },
         body,
         signal: ctrl.signal,
+        // Reject 3xx responses that would redirect to a different
+        // host. node fetch defaults to "follow" — explicit "manual"
+        // returns the 3xx as a normal response which we treat as
+        // failure (consumers must terminate at their advertised URL).
+        redirect: "manual",
       });
       clearTimeout(timer);
       if (!res.ok) {
@@ -134,4 +176,28 @@ function constantTimeEqual(a: string, b: string): boolean {
     mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
   }
   return mismatch === 0;
+}
+
+/**
+ * Reject IPs that fall in private / loopback / link-local / cloud-
+ * metadata ranges. Mirrors the URL-string allowlist in the create-time
+ * SSRF guard but operates on the resolved IP literal.
+ */
+function isPublicAddr(ip: string): boolean {
+  if (ip === "127.0.0.1" || ip === "::1" || ip === "0.0.0.0" || ip === "::") return false;
+  if (ip === "169.254.169.254") return false;
+  const ipv4 = ip.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4) {
+    const a = Number(ipv4[1]);
+    const b = Number(ipv4[2]);
+    if (a === 10 || a === 127 || a === 0) return false;
+    if (a === 169 && b === 254) return false;
+    if (a === 172 && b >= 16 && b <= 31) return false;
+    if (a === 192 && b === 168) return false;
+    return true;
+  }
+  // IPv6
+  const lower = ip.toLowerCase();
+  if (lower.startsWith("fe80") || lower.startsWith("fc") || lower.startsWith("fd")) return false;
+  return true;
 }

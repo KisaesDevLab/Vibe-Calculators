@@ -29,6 +29,13 @@ import { recordAuditEvent } from "../lib/audit-events.js";
 export interface ScheduleRouteDeps {
   db: Database;
   emailProvider?: EmailProvider | undefined;
+  /**
+   * Optional recipient-domain allowlist. When set, schedule recipient
+   * addresses must end in one of the listed domains. Prevents abusing
+   * the firm's SMTP relay to spam/phish arbitrary external addresses.
+   * Empty / undefined = no restriction (matches today's default).
+   */
+  recipientDomainAllowlist?: readonly string[];
 }
 
 const cadenceEnum = z.enum(["daily", "weekly", "monthly", "quarterly", "annually", "once"]);
@@ -70,6 +77,36 @@ export function buildSchedulesRouter(deps: ScheduleRouteDeps): Router {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success)
       return problem(res, 400, "Bad request", "Invalid body", { issues: parsed.error.issues });
+
+    // Recipient-domain allowlist guard: refuse if any recipient is
+    // outside the firm-configured allowlist. Without this, a preparer
+    // could use the firm's SMTP relay to email arbitrary addresses.
+    const recipientList = parsed.data.recipients
+      .split(/[\s,;]+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    const allowlist = deps.recipientDomainAllowlist;
+    if (allowlist && allowlist.length > 0) {
+      const blocked = recipientList.filter((email) => {
+        const at = email.lastIndexOf("@");
+        if (at < 0) return true;
+        const domain = email.slice(at + 1).toLowerCase();
+        return !allowlist.some(
+          (d) => domain === d.toLowerCase() || domain.endsWith(`.${d.toLowerCase()}`),
+        );
+      });
+      if (blocked.length > 0) {
+        return problem(
+          res,
+          400,
+          "Bad request",
+          `Recipient(s) outside the firm allowlist: ${blocked.join(", ")}`,
+        );
+      }
+    }
+    if (recipientList.length === 0) {
+      return problem(res, 400, "Bad request", "At least one recipient email is required");
+    }
 
     const [calc] = await deps.db
       .select()

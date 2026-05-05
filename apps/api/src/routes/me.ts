@@ -13,6 +13,7 @@ import {
 import {
   listActiveSessionsForUser,
   revokeAllUserSessions,
+  revokeOtherUserSessions,
   revokeSession,
 } from "../lib/sessions.js";
 import { recordAuthEvent } from "../lib/auth-events.js";
@@ -63,6 +64,12 @@ export function buildMeRouter(deps: MeRouteDeps): Router {
       ip: clientIp(req),
       userAgent: req.headers["user-agent"] ?? undefined,
     });
+    // Best-practice: invalidate every other session for this user on
+    // a credential change. Keeps the current tab logged in but boots
+    // any peer browser / device the attacker may have used.
+    if (req.session) {
+      await revokeOtherUserSessions(deps.db, user.id, req.session.id);
+    }
     res.status(204).send();
   });
 
