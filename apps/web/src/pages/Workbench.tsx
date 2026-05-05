@@ -45,6 +45,7 @@ import { RateInput } from "@/components/inputs/RateInput";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { VarianceDialog } from "@/components/workbench/VarianceDialog";
 import { cn } from "@/lib/utils";
 
 /**
@@ -890,6 +891,8 @@ export function WorkbenchPage(): JSX.Element {
           loanDetails={loanDetails}
           rowAnnotations={rowAnnotations}
           setRowAnnotation={setRowAnnotation}
+          updateRow={updateRow}
+          insertRowAfter={insertRowAfter}
         />
       )}
     </main>
@@ -930,6 +933,8 @@ function ResultPanel({
   loanDetails,
   rowAnnotations,
   setRowAnnotation,
+  updateRow,
+  insertRowAfter,
 }: {
   schedule: ScheduleResult;
   master: MasterUiState;
@@ -938,8 +943,11 @@ function ResultPanel({
   loanDetails: LoanDetailsState;
   rowAnnotations: Record<string, string>;
   setRowAnnotation: (dateKey: string, note: string) => void;
+  updateRow: <K extends keyof GridRow>(rowId: string, key: K, value: GridRow[K]) => void;
+  insertRowAfter: (rowId: string | null) => string;
 }): JSX.Element {
   const [chart, setChart] = useState<ChartKind>("stacked");
+  const [varianceOpen, setVarianceOpen] = useState(false);
 
   async function copyTsv(): Promise<void> {
     try {
@@ -1127,15 +1135,29 @@ function ResultPanel({
          */}
         {Math.abs(schedule.endingBalance.toNumber()) > 0.005 &&
           Math.abs(schedule.endingBalance.toNumber()) < 5 && (
-            <div className="rounded-md border border-amber-500/40 bg-amber-50/40 px-3 py-2 text-xs dark:bg-amber-500/10">
-              <strong>Loan not fully balanced:</strong> ending balance is{" "}
-              {schedule.endingBalance.toNumber() > 0 ? "+" : ""}
-              {schedule.endingBalance.toFixed(2)}. The payment you entered isn't the precise
-              amortizing amount. To find it, click the{" "}
-              <kbd className="rounded bg-muted px-1">U</kbd> button next to the payment's amount
-              cell, then click <strong>Solve</strong>.
+            <div className="flex items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-50/40 px-3 py-2 text-xs dark:bg-amber-500/10">
+              <span>
+                <strong>Loan not fully balanced:</strong> ending balance is{" "}
+                {schedule.endingBalance.toNumber() > 0 ? "+" : ""}
+                {schedule.endingBalance.toFixed(2)}. The payment you entered isn't the precise
+                amortizing amount.
+              </span>
+              <Button size="sm" variant="outline" onClick={() => setVarianceOpen(true)}>
+                Resolve…
+              </Button>
             </div>
           )}
+
+        {varianceOpen && (
+          <VarianceDialog
+            variance={schedule.endingBalance.toNumber()}
+            rows={rows}
+            schedule={schedule}
+            updateRow={updateRow}
+            insertRowAfter={insertRowAfter}
+            onClose={() => setVarianceOpen(false)}
+          />
+        )}
 
         <div className="print:hidden">
           <div className="flex gap-2 border-b border-border pb-2">
