@@ -9,6 +9,11 @@ import {
   sinkingFund,
   money,
   rate,
+  solveForPV,
+  solveForFV,
+  solveForPMT,
+  solveForN,
+  solveForI,
 } from "@vibe-calc/calc-engine";
 import {
   registerCalculator,
@@ -679,6 +684,203 @@ const noteYieldCalc: TaxCalculator<NoteYieldI, NoteYieldO> = {
 };
 
 // ---------------------------------------------------------------------
+// Phase 6 / 11.17 — TVM solver (PV/FV/PMT/i/n with one input unknown)
+//
+// The classic 5-input TVM problem in standalone form: pick which one
+// to solve for, supply the other four, optionally annuity-due. The
+// engine's closed-form solvers handle PV/FV/PMT/n analytically and
+// solveForI uses Newton-Raphson with Brent fallback.
+// ---------------------------------------------------------------------
+
+const tvmSolverInput = z.object({
+  solveFor: z.enum(["pv", "fv", "pmt", "i", "n"]),
+  pv: z.number().finite().optional(),
+  fv: z.number().finite().default(0),
+  pmt: z.number().finite().optional(),
+  /** Annual nominal rate as a decimal (0.06 = 6%). */
+  annualRate: z.number().min(-0.5).max(2).optional(),
+  /** Term in years (used with paymentsPerYear to derive n). */
+  termYears: z.number().positive().optional(),
+  paymentsPerYear: z.number().int().positive().default(12),
+  paymentTiming: z.union([z.literal(0), z.literal(1)]).default(0),
+});
+type TvmSolverI = z.infer<typeof tvmSolverInput>;
+
+const tvmSolverOutput = z.object({
+  solvedField: z.string(),
+  solvedValue: z.number().nullable(),
+  /** The full set of values, with the solved one filled in. */
+  pv: z.number(),
+  fv: z.number(),
+  pmt: z.number(),
+  annualRate: z.number(),
+  termYears: z.number(),
+  /** Periodic rate the solver actually used (annual / paymentsPerYear). */
+  periodicRate: z.number(),
+  /** Number of periods the solver actually used (termYears × paymentsPerYear). */
+  periods: z.number(),
+  /** Failure reason when the iterative `i` solver doesn't converge. */
+  failureReason: z.string().nullable(),
+});
+type TvmSolverO = z.infer<typeof tvmSolverOutput>;
+
+const tvmSolverCalc: TaxCalculator<TvmSolverI, TvmSolverO> = {
+  metadata: {
+    kind: "tvm.solver",
+    name: "TVM solver (PV / FV / PMT / i / n)",
+    description:
+      "Classic 5-input time-value-of-money: supply any four of present value, future value, payment, rate, and term — pick which one to solve for. End or beginning of period. Sign convention: cash inflows positive, outflows negative.",
+    taxYears: [],
+    formReferences: [],
+    requiredTables: [],
+  },
+  inputSchema: tvmSolverInput,
+  outputSchema: tvmSolverOutput,
+  validateInputs(raw): ValidationResult<TvmSolverI> {
+    const r = tvmSolverInput.safeParse(raw);
+    if (!r.success) {
+      return {
+        ok: false,
+        issues: r.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+      };
+    }
+    // The unknown field is the one we're solving for; every other
+    // field is required at compute time. Surface a clean message
+    // pointing at the missing input.
+    const v = r.data;
+    const required: Array<{ key: keyof TvmSolverI; label: string }> = [];
+    if (v.solveFor !== "pv") required.push({ key: "pv", label: "Present value" });
+    if (v.solveFor !== "pmt") required.push({ key: "pmt", label: "Payment" });
+    if (v.solveFor !== "i") required.push({ key: "annualRate", label: "Annual rate" });
+    if (v.solveFor !== "n") required.push({ key: "termYears", label: "Term (years)" });
+    for (const req of required) {
+      if (v[req.key] === undefined) {
+        return {
+          ok: false,
+          issues: [
+            {
+              path: req.key as string,
+              message: `${req.label} is required when solving for ${v.solveFor}`,
+            },
+          ],
+        };
+      }
+    }
+    return { ok: true, value: v };
+  },
+  compute(input) {
+    const periodicRate =
+      input.annualRate !== undefined ? input.annualRate / input.paymentsPerYear : 0;
+    const periods = input.termYears !== undefined ? input.termYears * input.paymentsPerYear : 0;
+
+    // Build the partial inputs for the solver (omits the unknown).
+    const solvedField = input.solveFor;
+    let solvedValue: number | null = null;
+    let failureReason: string | null = null;
+    let pv = input.pv ?? 0;
+    let fv = input.fv;
+    let pmt = input.pmt ?? 0;
+    let annualRate = input.annualRate ?? 0;
+    let termYears = input.termYears ?? 0;
+
+    try {
+      if (input.solveFor === "pv") {
+        const r = solveForPV({
+          fv: money(fv),
+          pmt: money(pmt),
+          i: rate(periodicRate),
+          n: rate(periods),
+          type: input.paymentTiming,
+        });
+        pv = num(r);
+        solvedValue = pv;
+      } else if (input.solveFor === "fv") {
+        const r = solveForFV({
+          pv: money(pv),
+          pmt: money(pmt),
+          i: rate(periodicRate),
+          n: rate(periods),
+          type: input.paymentTiming,
+        });
+        fv = num(r);
+        solvedValue = fv;
+      } else if (input.solveFor === "pmt") {
+        const r = solveForPMT({
+          pv: money(pv),
+          fv: money(fv),
+          i: rate(periodicRate),
+          n: rate(periods),
+          type: input.paymentTiming,
+        });
+        pmt = num(r);
+        solvedValue = pmt;
+      } else if (input.solveFor === "n") {
+        const r = solveForN({
+          pv: money(pv),
+          fv: money(fv),
+          pmt: money(pmt),
+          i: rate(periodicRate),
+          type: input.paymentTiming,
+        });
+        const periodsSolved = num(r);
+        termYears = periodsSolved / input.paymentsPerYear;
+        solvedValue = termYears;
+      } else if (input.solveFor === "i") {
+        const result = solveForI({
+          pv: money(pv),
+          fv: money(fv),
+          pmt: money(pmt),
+          n: rate(periods),
+          type: input.paymentTiming,
+        });
+        if (result.ok) {
+          const periodicSolved = num(result.value);
+          annualRate = periodicSolved * input.paymentsPerYear;
+          solvedValue = annualRate;
+        } else {
+          failureReason = result.reason;
+        }
+      }
+    } catch (err) {
+      failureReason = err instanceof Error ? err.message : String(err);
+    }
+
+    return {
+      solvedField,
+      solvedValue,
+      pv,
+      fv,
+      pmt,
+      annualRate,
+      termYears,
+      periodicRate:
+        input.annualRate !== undefined ? periodicRate : annualRate / input.paymentsPerYear,
+      periods: input.termYears !== undefined ? periods : termYears * input.paymentsPerYear,
+      failureReason,
+    };
+  },
+  narrate(input, output) {
+    if (output.failureReason) {
+      return `Solver did not converge: ${output.failureReason}. Try a different starting guess or verify the inputs imply a non-degenerate problem.`;
+    }
+    const labels: Record<string, string> = {
+      pv: "Present value",
+      fv: "Future value",
+      pmt: "Payment",
+      i: "Annual rate",
+      n: "Term (years)",
+    };
+    const formatted =
+      input.solveFor === "i"
+        ? `${(output.solvedValue ?? 0) * 100} %`
+        : input.solveFor === "n"
+          ? `${output.solvedValue?.toFixed(2)} years`
+          : `$${(output.solvedValue ?? 0).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+    return `${labels[input.solveFor]} = ${formatted}. Given PV=$${output.pv.toFixed(2)}, FV=$${output.fv.toFixed(2)}, PMT=$${output.pmt.toFixed(2)}, ${(output.annualRate * 100).toFixed(4)}% annual over ${output.termYears.toFixed(2)} years (${input.paymentsPerYear}× per year, ${input.paymentTiming === 1 ? "begin" : "end"}-of-period).`;
+  },
+};
+
+// ---------------------------------------------------------------------
 // Side-effect — register all wrappers on the shared registry.
 // Idempotent: calling twice is a no-op.
 // ---------------------------------------------------------------------
@@ -698,4 +900,5 @@ export function registerTvmCalculators(): void {
   registerCalculator(imputedCalc);
   registerCalculator(implicitCalc);
   registerCalculator(noteYieldCalc);
+  registerCalculator(tvmSolverCalc);
 }

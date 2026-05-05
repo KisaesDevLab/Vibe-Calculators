@@ -9,7 +9,7 @@ import {
   type ComputeMethod,
   type DayCountConvention,
 } from "@vibe-calc/calc-engine";
-import { scheduleToPdf } from "@vibe-calc/pdf";
+import { scheduleToPdf, scheduleToCsv, scheduleToXlsx } from "@vibe-calc/pdf";
 import { problem } from "../middleware/auth.js";
 
 /**
@@ -101,6 +101,86 @@ const bodySchema = z.object({
 // dependencies. The route is mounted with `buildWorkbenchRouter()`
 // directly; we don't intersect a deps type into ServerOptions.
 
+/** Parse + validate the workbench body and run the engine. Returns
+ *  either the computed schedule (and the original parsed body) or an
+ *  error tuple to forward to `problem(...)`. Shared between the
+ *  /pdf, /xlsx, and /csv endpoints. */
+type ScheduleBuildResult =
+  | { ok: true; data: z.infer<typeof bodySchema>; schedule: ReturnType<typeof generateSchedule> }
+  | {
+      ok: false;
+      status: number;
+      title: string;
+      detail: string;
+      issues?: { path: string; message: string }[];
+    };
+
+async function buildScheduleFromBody(body: unknown): Promise<ScheduleBuildResult> {
+  const parsed = bodySchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      status: 400,
+      title: "Bad request",
+      detail: "Invalid workbench body",
+      issues: parsed.error.issues.map((i) => ({
+        path: i.path.join("."),
+        message: i.message,
+      })),
+    };
+  }
+  const { master, rows } = parsed.data;
+  let events: CashFlowEvent[];
+  try {
+    events = rows
+      .filter((r) => r.date && r.kind)
+      .map((r) => {
+        const event: CashFlowEvent = {
+          date: new Date(`${r.date}T00:00:00.000Z`),
+          kind: r.kind,
+        };
+        if (r.amount) event.amount = money(r.amount);
+        if (r.rateValue) event.rate = rate(r.rateValue);
+        if (r.count) event.count = Number(r.count);
+        if (r.interval) event.interval = r.interval as CompoundingInterval;
+        if (r.memo) event.memo = r.memo;
+        return event;
+      });
+  } catch (err) {
+    return {
+      ok: false,
+      status: 400,
+      title: "Bad request",
+      detail: `Could not parse rows: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+  if (events.length === 0) {
+    return {
+      ok: false,
+      status: 400,
+      title: "Bad request",
+      detail: "No valid rows in workbench body",
+    };
+  }
+  try {
+    const schedule = generateSchedule(events, {
+      rate: rate(master.rate),
+      compounding: master.compounding,
+      dayCount: master.dayCount as DayCountConvention,
+      paymentTiming: master.paymentTiming,
+      computeMethod: master.computeMethod as ComputeMethod,
+    });
+    return { ok: true, data: parsed.data, schedule };
+  } catch (err) {
+    return {
+      ok: false,
+      status: 422,
+      title: "Compute failed",
+      detail: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 export function buildWorkbenchRouter(): Router {
   const router = Router();
 
@@ -190,6 +270,65 @@ export function buildWorkbenchRouter(): Router {
       `attachment; filename="${slugify(master.label || "schedule")}-${preparedOn
         .toISOString()
         .slice(0, 10)}.pdf"`,
+    );
+    res.send(buf);
+  });
+
+  router.post("/csv", async (req: Request, res: Response) => {
+    if (!req.user) return problem(res, 401, "Unauthorized", "Authentication required");
+    const result = await buildScheduleFromBody(req.body);
+    if (!result.ok) {
+      return problem(
+        res,
+        result.status,
+        result.title,
+        result.detail,
+        result.issues ? { issues: result.issues } : undefined,
+      );
+    }
+    const csv = scheduleToCsv(result.schedule);
+    const today = new Date().toISOString().slice(0, 10);
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${slugify(result.data.master.label || "schedule")}-${today}.csv"`,
+    );
+    res.send(csv);
+  });
+
+  router.post("/xlsx", async (req: Request, res: Response) => {
+    if (!req.user) return problem(res, 401, "Unauthorized", "Authentication required");
+    const result = await buildScheduleFromBody(req.body);
+    if (!result.ok) {
+      return problem(
+        res,
+        result.status,
+        result.title,
+        result.detail,
+        result.issues ? { issues: result.issues } : undefined,
+      );
+    }
+    let buf: Buffer;
+    try {
+      buf = await scheduleToXlsx(result.schedule, {
+        calculationLabel: result.data.master.label,
+      });
+    } catch (err) {
+      return problem(
+        res,
+        500,
+        "XLSX render failed",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${slugify(result.data.master.label || "schedule")}-${today}.xlsx"`,
     );
     res.send(buf);
   });

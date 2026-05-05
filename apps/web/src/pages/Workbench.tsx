@@ -561,6 +561,38 @@ function ResultPanel({
     }
   }
 
+  async function downloadFormat(format: "csv" | "xlsx", _mime: string): Promise<void> {
+    try {
+      const res = await fetch(`/api/v1/workbench/${format}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ master, rows, loanDetails }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        let detail = `HTTP ${res.status}`;
+        try {
+          detail = (JSON.parse(text) as { detail?: string }).detail ?? detail;
+        } catch {
+          // fall through
+        }
+        throw new Error(detail);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${slug(master.label)}-${new Date().toISOString().slice(0, 10)}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function downloadPdf(): Promise<void> {
     try {
       const res = await fetch("/api/v1/workbench/pdf", {
@@ -604,7 +636,26 @@ function ResultPanel({
           </Button>
           <Button variant="outline" size="sm" onClick={() => void downloadPdf()}>
             <Printer className="h-4 w-4" />
-            Download PDF
+            PDF
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void downloadFormat("csv", "text/csv")}
+          >
+            CSV
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              void downloadFormat(
+                "xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              )
+            }
+          >
+            XLSX
           </Button>
           <span
             className="ml-2 inline-flex items-center gap-1 text-xs text-muted-foreground"
