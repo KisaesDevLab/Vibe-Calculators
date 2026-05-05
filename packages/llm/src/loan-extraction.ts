@@ -46,6 +46,13 @@ export const loanExtractionSchema = z.object({
   notes: z.string().nullable(),
   /** Per-field confidence 0..1 (sparse — only populated where uncertain). */
   fieldConfidence: z.record(z.number().min(0).max(1)).default({}),
+  /**
+   * Phase 23.10 — per-field source quotes. Keyed by field name (e.g.
+   * "principal", "interestRate"); value is an exact substring of the
+   * document text the model used to set the field. Sparse — populated
+   * when the model can pin a quote, omitted otherwise.
+   */
+  sourceQuotes: z.record(z.string()).default({}),
 });
 
 export type LoanExtraction = z.infer<typeof loanExtractionSchema>;
@@ -53,7 +60,13 @@ export type LoanExtraction = z.infer<typeof loanExtractionSchema>;
 const SYSTEM_PROMPT = `You are an extraction system for a CPA firm. You read loan-agreement documents and emit a strictly-typed JSON object with the agreement's key terms. Use null for any field the document does not state explicitly. Do not infer values that aren't in the text. Always invoke the emit_structured_response tool.`;
 
 const USER_TEMPLATE = (text: string): string =>
-  `Extract the loan-agreement terms from the document below. If a field is ambiguous, set it to null and add a note in the "notes" field. For any field with reduced confidence (parsing was difficult, doc was unclear), record that field's confidence in "fieldConfidence" with a value 0..1.\n\n--- DOCUMENT ---\n${text}\n--- END DOCUMENT ---`;
+  `Extract the loan-agreement terms from the document below. If a field is ambiguous, set it to null and add a note in the "notes" field. For any field with reduced confidence (parsing was difficult, doc was unclear), record that field's confidence in "fieldConfidence" with a value 0..1.
+
+When you populate a field, copy the *exact* substring from the document that justifies your value into "sourceQuotes" using the field name as the key (e.g. {"principal": "Principal amount: $300,000.00"}). The substring must appear verbatim in the document text — DO NOT paraphrase. If you can't pin a quote, omit the field from sourceQuotes rather than fabricating one.
+
+--- DOCUMENT ---
+${text}
+--- END DOCUMENT ---`;
 
 /**
  * Optional override for the prompt body / system message. Phase 23.17
@@ -140,6 +153,10 @@ function schemaToJsonSchema(): Record<string, unknown> {
         type: "object",
         additionalProperties: { type: "number", minimum: 0, maximum: 1 },
       },
+      sourceQuotes: {
+        type: "object",
+        additionalProperties: { type: "string" },
+      },
     },
     required: [
       "borrower",
@@ -156,6 +173,7 @@ function schemaToJsonSchema(): Record<string, unknown> {
       "variableRateClause",
       "notes",
       "fieldConfidence",
+      "sourceQuotes",
     ],
   };
 }

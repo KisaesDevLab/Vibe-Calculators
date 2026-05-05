@@ -192,6 +192,7 @@ export function ExtractPage(): JSX.Element {
             {extraction && (
               <ExtractionView
                 extraction={extraction}
+                documentText={text}
                 flagged={flagged}
                 onApply={applyToWorkbench}
               />
@@ -205,14 +206,22 @@ export function ExtractPage(): JSX.Element {
 
 interface ExtractionViewProps {
   extraction: ExtractionRow;
+  documentText: string;
   flagged: string[];
   onApply: () => void;
 }
 
-function ExtractionView({ extraction, flagged, onApply }: ExtractionViewProps): JSX.Element {
+function ExtractionView({
+  extraction,
+  documentText,
+  flagged,
+  onApply,
+}: ExtractionViewProps): JSX.Element {
   const j = extraction.extractedJson;
+  const [activeQuoteKey, setActiveQuoteKey] = useState<string | null>(null);
   if (!j) return <p className="text-sm text-muted-foreground">No fields extracted.</p>;
   const flaggedSet = new Set(flagged);
+  const sourceQuotes = (j.sourceQuotes ?? {}) as Record<string, string>;
   const rows: { key: string; label: string; value: unknown }[] = [
     { key: "borrower", label: "Borrower", value: get(j, "borrower.name") },
     { key: "lender", label: "Lender", value: get(j, "lender.name") },
@@ -234,23 +243,44 @@ function ExtractionView({ extraction, flagged, onApply }: ExtractionViewProps): 
 
   return (
     <div className="space-y-3">
-      <table className="w-full text-sm">
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.key} className="border-b last:border-b-0">
-              <td className="w-1/3 py-1.5 pr-2 text-muted-foreground">{row.label}</td>
-              <td className="py-1.5 font-medium">
-                {row.value as string}
-                {flaggedSet.has(row.key) && (
-                  <span className="ml-2 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400">
-                    review
-                  </span>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {/* Phase 23.10 — source-highlight panel. Two columns: document
+         text on the left with the active field's quote highlighted,
+         extracted fields on the right. Clicking a field with a quote
+         scrolls the doc to the quote and highlights it. */}
+      {documentText && (
+        <div className="grid gap-3 lg:grid-cols-[1fr_1fr]">
+          <SourceTextPane
+            text={documentText}
+            activeQuote={activeQuoteKey ? (sourceQuotes[activeQuoteKey] ?? null) : null}
+          />
+          <FieldsPane
+            rows={rows}
+            flaggedSet={flaggedSet}
+            sourceQuotes={sourceQuotes}
+            activeQuoteKey={activeQuoteKey}
+            setActiveQuoteKey={setActiveQuoteKey}
+          />
+        </div>
+      )}
+      {!documentText && (
+        <table className="w-full text-sm">
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.key} className="border-b last:border-b-0">
+                <td className="w-1/3 py-1.5 pr-2 text-muted-foreground">{row.label}</td>
+                <td className="py-1.5 font-medium">
+                  {row.value as string}
+                  {flaggedSet.has(row.key) && (
+                    <span className="ml-2 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400">
+                      review
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
       {typeof j.notes === "string" && j.notes.length > 0 && (
         <div className="rounded-md bg-muted px-3 py-2 text-xs">
           <p className="mb-1 font-medium">Notes</p>
@@ -262,6 +292,110 @@ function ExtractionView({ extraction, flagged, onApply }: ExtractionViewProps): 
       </div>
     </div>
   );
+}
+
+function FieldsPane({
+  rows,
+  flaggedSet,
+  sourceQuotes,
+  activeQuoteKey,
+  setActiveQuoteKey,
+}: {
+  rows: { key: string; label: string; value: unknown }[];
+  flaggedSet: Set<string>;
+  sourceQuotes: Record<string, string>;
+  activeQuoteKey: string | null;
+  setActiveQuoteKey: (k: string | null) => void;
+}): JSX.Element {
+  return (
+    <div className="overflow-y-auto rounded-md border border-border">
+      <table className="w-full text-sm">
+        <tbody>
+          {rows.map((row) => {
+            const hasQuote = sourceQuotes[row.key] !== undefined;
+            const isActive = activeQuoteKey === row.key;
+            return (
+              <tr
+                key={row.key}
+                onClick={() => {
+                  if (!hasQuote) return;
+                  setActiveQuoteKey(isActive ? null : row.key);
+                }}
+                className={
+                  "border-b last:border-b-0 " +
+                  (hasQuote ? "cursor-pointer hover:bg-accent/40 " : "") +
+                  (isActive ? "bg-primary/10" : "")
+                }
+              >
+                <td className="w-1/3 px-3 py-1.5 text-muted-foreground">{row.label}</td>
+                <td className="px-3 py-1.5 font-medium">
+                  {row.value as string}
+                  {flaggedSet.has(row.key) && (
+                    <span className="ml-2 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400">
+                      review
+                    </span>
+                  )}
+                  {hasQuote && (
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      📌 click to highlight
+                    </span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SourceTextPane({
+  text,
+  activeQuote,
+}: {
+  text: string;
+  activeQuote: string | null;
+}): JSX.Element {
+  // Build segments: [before, match, after, ...] when an active quote
+  // is set. Quotes are matched verbatim (case-sensitive). The model
+  // is instructed to copy substrings exactly, so a no-match means the
+  // model fabricated; we fall through to plain text in that case.
+  const segments = activeQuote ? splitOnQuote(text, activeQuote) : [{ text, highlight: false }];
+  return (
+    <div className="max-h-[60vh] overflow-y-auto rounded-md border border-border bg-muted/30 p-3 text-sm">
+      <p className="mb-2 text-xs font-medium uppercase text-muted-foreground">Source document</p>
+      <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed">
+        {segments.map((seg, i) =>
+          seg.highlight ? (
+            <mark
+              key={i}
+              className="rounded bg-amber-300/60 px-0.5 dark:bg-amber-400/30"
+              ref={(el) => {
+                // Auto-scroll the highlight into view when it mounts.
+                if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
+              }}
+            >
+              {seg.text}
+            </mark>
+          ) : (
+            <span key={i}>{seg.text}</span>
+          ),
+        )}
+      </pre>
+    </div>
+  );
+}
+
+function splitOnQuote(text: string, quote: string): { text: string; highlight: boolean }[] {
+  const idx = text.indexOf(quote);
+  if (idx < 0) return [{ text, highlight: false }];
+  const segments: { text: string; highlight: boolean }[] = [];
+  if (idx > 0) segments.push({ text: text.slice(0, idx), highlight: false });
+  segments.push({ text: quote, highlight: true });
+  const after = text.slice(idx + quote.length);
+  if (after) segments.push({ text: after, highlight: false });
+  return segments;
 }
 
 function get(obj: Record<string, unknown>, path: string): string {

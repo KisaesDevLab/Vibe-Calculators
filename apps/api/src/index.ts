@@ -16,7 +16,8 @@ const { createKms } = await import("./lib/kms.js");
 const { sealerFrom } = await import("./lib/totp.js");
 const { createRateLimiter, redisStore } = await import("./lib/rate-limit.js");
 const { Redis } = await import("ioredis");
-const { createEmailProviderFromEnv } = await import("@vibe-calc/email");
+const { createEmailProviderFromEnv, renderMagicLinkEmail } = await import("@vibe-calc/email");
+const { loadFirmSettings } = await import("./lib/firm-settings.js");
 type EmailProviderType = Awaited<ReturnType<typeof createEmailProviderFromEnv>>;
 const { runDeepHealth } = await import("./lib/deep-health.js");
 
@@ -95,14 +96,30 @@ const emitMagicLinkEmail = async (input: {
 }): Promise<void> => {
   if (emailProvider) {
     try {
+      // Phase 22.6 — load firm-settings so the email shows the firm's
+      // brand color + name in the header. Best-effort: a DB hiccup
+      // shouldn't block magic-link delivery, so default to bare brand
+      // when the read fails.
+      let firm: Awaited<ReturnType<typeof loadFirmSettings>> | null = null;
+      try {
+        firm = await loadFirmSettings(db);
+      } catch {
+        // ignore
+      }
+      const rendered = renderMagicLinkEmail({
+        consumeUrl: input.consumeUrl,
+        expiresAt: input.expiresAt,
+        brand: {
+          firmName: firm?.firmName || undefined,
+          brandColor: firm?.brandColor || undefined,
+          firmFooter: firm?.pdfFooter || undefined,
+        },
+      });
       await emailProvider.send({
         to: input.email,
-        subject: "Sign in to Vibe Calculators",
-        text:
-          `A sign-in link was requested for this address.\n\n` +
-          `Open: ${input.consumeUrl}\n\n` +
-          `This link expires at ${input.expiresAt.toISOString()}. ` +
-          `If you didn't request it, ignore this message.`,
+        subject: rendered.subject,
+        text: rendered.text,
+        html: rendered.html,
       });
       return;
     } catch (err) {
