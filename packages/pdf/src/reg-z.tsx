@@ -1,4 +1,5 @@
 import { Document, Page, Text, View, StyleSheet, pdf } from "@react-pdf/renderer";
+import { fmtMoney } from "./format.js";
 
 /**
  * Phase 13.2 / 8.6 — Reg Z Truth-in-Lending disclosure PDF.
@@ -98,19 +99,19 @@ export function RegZDocument({ opts }: { opts: RegZPdfOptions }): React.ReactEle
           </View>
           <View style={styles.gridCell}>
             <Text style={styles.gridLabel}>FINANCE CHARGE</Text>
-            <Text style={styles.gridValue}>${opts.financeCharge.toFixed(2)}</Text>
+            <Text style={styles.gridValue}>${fmtMoney(opts.financeCharge)}</Text>
             <Text style={styles.gridUnit}>The dollar amount the credit will cost you.</Text>
           </View>
           <View style={styles.gridCell}>
             <Text style={styles.gridLabel}>AMOUNT FINANCED</Text>
-            <Text style={styles.gridValue}>${opts.amountFinanced.toFixed(2)}</Text>
+            <Text style={styles.gridValue}>${fmtMoney(opts.amountFinanced)}</Text>
             <Text style={styles.gridUnit}>
               The amount of credit provided to you on your behalf.
             </Text>
           </View>
           <View style={[styles.gridCell, { marginRight: 0 }]}>
             <Text style={styles.gridLabel}>TOTAL OF PAYMENTS</Text>
-            <Text style={styles.gridValue}>${opts.totalOfPayments.toFixed(2)}</Text>
+            <Text style={styles.gridValue}>${fmtMoney(opts.totalOfPayments)}</Text>
             <Text style={styles.gridUnit}>
               What you will have paid after all scheduled payments.
             </Text>
@@ -128,7 +129,7 @@ export function RegZDocument({ opts }: { opts: RegZPdfOptions }): React.ReactEle
             {opts.paymentSchedule.map((p, i) => (
               <View key={i} style={styles.tableRow}>
                 <Text style={styles.cellLeft}>{p.count}</Text>
-                <Text style={styles.cellRight}>${p.amount.toFixed(2)}</Text>
+                <Text style={styles.cellRight}>${fmtMoney(p.amount)}</Text>
                 <Text style={styles.cellRight}>{p.firstDue}</Text>
               </View>
             ))}

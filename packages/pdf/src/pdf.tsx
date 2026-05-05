@@ -1,5 +1,6 @@
 import { Document, Page, Text, View, StyleSheet, pdf } from "@react-pdf/renderer";
 import type { ScheduleResult, ScheduleSubtotal } from "@vibe-calc/calc-engine";
+import { fmtMoney } from "./format.js";
 
 /**
  * Phase 13.1 / 13.2 — PDF export.
@@ -108,9 +109,7 @@ export interface AmortizationPdfOptions {
   subtotals?: ScheduleSubtotal[];
 }
 
-function fmt(d: { toFixed(n: number): string }): string {
-  return d.toFixed(2);
-}
+const fmt = fmtMoney;
 
 export function AmortizationDocument({
   schedule,

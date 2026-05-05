@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { Fragment, useEffect, useMemo, useState, type ChangeEvent } from "react";
 import {
   Plus,
   Trash2,
@@ -24,13 +24,16 @@ import {
   VIRTUALIZE_THRESHOLD,
 } from "@/components/schedule/VirtualScheduleTable";
 import {
+  computeSubtotals,
   generateSchedule,
   type CashFlowEventKind,
   type CompoundingInterval,
   type ComputeMethod,
   type DayCountConvention,
   type ScheduleResult,
+  type ScheduleSubtotal,
 } from "@vibe-calc/calc-engine";
+import { fmtMoney } from "@/lib/format";
 import {
   masterToSettings,
   rowsToEvents,
@@ -974,6 +977,29 @@ function ResultPanel({
   const [fiscalYearEndMonth, setFiscalYearEndMonth] = useState<number>(12);
   const [grandTotal, setGrandTotal] = useState(true);
 
+  /**
+   * Phase 13.2 — on-screen subtotals. Same engine helper the PDF
+   * renderer uses; we just interleave the markers into the inline
+   * schedule table below.
+   */
+  const subtotals: ScheduleSubtotal[] = useMemo(() => {
+    if (groupCadence === "none" && !grandTotal) return [];
+    return computeSubtotals(schedule, {
+      fiscalYearEndMonth,
+      ...(groupCadence !== "none" ? { cadence: groupCadence } : {}),
+      grandTotal,
+    });
+  }, [schedule, groupCadence, fiscalYearEndMonth, grandTotal]);
+  const subtotalsByRowIndex = useMemo(() => {
+    const map = new Map<number, ScheduleSubtotal[]>();
+    for (const s of subtotals) {
+      const arr = map.get(s.afterRowIndex) ?? [];
+      arr.push(s);
+      map.set(s.afterRowIndex, arr);
+    }
+    return map;
+  }, [subtotals]);
+
   async function copyTsv(): Promise<void> {
     try {
       await navigator.clipboard.writeText(scheduleToTsv(schedule));
@@ -1147,9 +1173,9 @@ function ResultPanel({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-          <Stat label="Ending balance" value={schedule.endingBalance.toFixed(2)} />
-          <Stat label="Total interest" value={schedule.totalInterest.toFixed(2)} />
-          <Stat label="Total principal" value={schedule.totalPrincipal.toFixed(2)} />
+          <Stat label="Ending balance" value={fmtMoney(schedule.endingBalance)} />
+          <Stat label="Total interest" value={fmtMoney(schedule.totalInterest)} />
+          <Stat label="Total principal" value={fmtMoney(schedule.totalPrincipal)} />
           <Stat
             label="Negative-am"
             value={schedule.hasNegativeAm ? "Yes" : "No"}
@@ -1228,7 +1254,7 @@ function ResultPanel({
               <span>
                 <strong>Loan not fully balanced:</strong> ending balance is{" "}
                 {schedule.endingBalance.toNumber() > 0 ? "+" : ""}
-                {schedule.endingBalance.toFixed(2)}. The payment you entered isn't the precise
+                {fmtMoney(schedule.endingBalance)}. The payment you entered isn't the precise
                 amortizing amount.
               </span>
               <Button size="sm" variant="outline" onClick={() => setVarianceOpen(true)}>
@@ -1276,6 +1302,7 @@ function ResultPanel({
               setRowAnnotation={setRowAnnotation}
               deriveMathTooltip={(row) => deriveMathTooltip(row, master)}
               isYearEnd={isYearEnd}
+              subtotals={subtotals}
             />
           </div>
         ) : null}
@@ -1305,49 +1332,57 @@ function ResultPanel({
                 const math = deriveMathTooltip(r, master);
                 const dateKey = r.date.toISOString().slice(0, 10);
                 const annotation = rowAnnotations[dateKey] ?? "";
+                const subtotalsAfter = subtotalsByRowIndex.get(i) ?? [];
                 return (
-                  <tr
-                    key={i}
-                    title={math}
-                    className={cn(
-                      "cursor-help border-t border-border",
-                      r.negativeAm && "bg-destructive/5",
-                      yearEnd && "bg-secondary/40 font-semibold",
-                    )}
-                  >
-                    <td className="px-2 py-1">{dateKey}</td>
-                    <td className="px-2 py-1">{r.kind}</td>
-                    <td className="px-2 py-1 text-right">{r.opening.toFixed(2)}</td>
-                    <td className="px-2 py-1 text-right">{r.interestAccrued.toFixed(2)}</td>
-                    <td className="px-2 py-1 text-right">{r.paymentApplied.toFixed(2)}</td>
-                    <td className="px-2 py-1 text-right">{r.principalApplied.toFixed(2)}</td>
-                    <td className="px-2 py-1 text-right">{r.closing.toFixed(2)}</td>
-                    <td className="px-2 py-1 text-right">{r.cumulativeInterest.toFixed(2)}</td>
-                    <td className="px-2 py-1 max-w-xs truncate" title={annotation || r.memo || ""}>
-                      <button
-                        type="button"
-                        className={cn(
-                          "rounded px-1 hover:bg-accent/40",
-                          annotation && "text-primary font-semibold",
-                        )}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const next = window.prompt(
-                            `Annotation for ${dateKey} (Phase 12.5 — saved with version):`,
-                            annotation,
-                          );
-                          if (next === null) return;
-                          setRowAnnotation(dateKey, next);
-                        }}
-                      >
-                        {annotation ? "📝" : "+"}
-                      </button>
-                      {annotation && <span className="ml-1 truncate text-xs">{annotation}</span>}
-                      {!annotation && r.memo && (
-                        <span className="ml-1 text-xs text-muted-foreground">{r.memo}</span>
+                  <Fragment key={i}>
+                    <tr
+                      title={math}
+                      className={cn(
+                        "cursor-help border-t border-border",
+                        r.negativeAm && "bg-destructive/5",
+                        yearEnd && "bg-secondary/40 font-semibold",
                       )}
-                    </td>
-                  </tr>
+                    >
+                      <td className="px-2 py-1">{dateKey}</td>
+                      <td className="px-2 py-1">{r.kind}</td>
+                      <td className="px-2 py-1 text-right">{fmtMoney(r.opening)}</td>
+                      <td className="px-2 py-1 text-right">{fmtMoney(r.interestAccrued)}</td>
+                      <td className="px-2 py-1 text-right">{fmtMoney(r.paymentApplied)}</td>
+                      <td className="px-2 py-1 text-right">{fmtMoney(r.principalApplied)}</td>
+                      <td className="px-2 py-1 text-right">{fmtMoney(r.closing)}</td>
+                      <td className="px-2 py-1 text-right">{fmtMoney(r.cumulativeInterest)}</td>
+                      <td
+                        className="px-2 py-1 max-w-xs truncate"
+                        title={annotation || r.memo || ""}
+                      >
+                        <button
+                          type="button"
+                          className={cn(
+                            "rounded px-1 hover:bg-accent/40",
+                            annotation && "text-primary font-semibold",
+                          )}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const next = window.prompt(
+                              `Annotation for ${dateKey} (Phase 12.5 — saved with version):`,
+                              annotation,
+                            );
+                            if (next === null) return;
+                            setRowAnnotation(dateKey, next);
+                          }}
+                        >
+                          {annotation ? "📝" : "+"}
+                        </button>
+                        {annotation && <span className="ml-1 truncate text-xs">{annotation}</span>}
+                        {!annotation && r.memo && (
+                          <span className="ml-1 text-xs text-muted-foreground">{r.memo}</span>
+                        )}
+                      </td>
+                    </tr>
+                    {subtotalsAfter.map((s, si) => (
+                      <SubtotalRow key={`sub-${i}-${si}`} subtotal={s} />
+                    ))}
+                  </Fragment>
                 );
               })}
             </tbody>
@@ -1355,6 +1390,32 @@ function ResultPanel({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/** On-screen subtotal row — TValue-style bold totals between groups. */
+function SubtotalRow({ subtotal }: { subtotal: ScheduleSubtotal }): JSX.Element {
+  const isGrand = subtotal.label === "Grand Total";
+  return (
+    <tr
+      className={cn(
+        "font-semibold",
+        isGrand
+          ? "border-y-2 border-foreground bg-secondary/80"
+          : "border-y border-border bg-secondary/40",
+      )}
+    >
+      <td className="px-2 py-1.5" colSpan={2}>
+        {subtotal.label}
+      </td>
+      <td className="px-2 py-1.5 text-right text-muted-foreground">—</td>
+      <td className="px-2 py-1.5 text-right">{fmtMoney(subtotal.totalInterest)}</td>
+      <td className="px-2 py-1.5 text-right">{fmtMoney(subtotal.totalPayment)}</td>
+      <td className="px-2 py-1.5 text-right">{fmtMoney(subtotal.totalPrincipal)}</td>
+      <td className="px-2 py-1.5 text-right text-muted-foreground">—</td>
+      <td className="px-2 py-1.5 text-right text-muted-foreground">—</td>
+      <td className="px-2 py-1.5"></td>
+    </tr>
   );
 }
 

@@ -1,4 +1,5 @@
 import { Document, Page, Text, View, StyleSheet, pdf } from "@react-pdf/renderer";
+import { fmtMoney } from "./format.js";
 
 /**
  * Phase 13.2 — IRR / NPV summary PDF.
@@ -96,7 +97,9 @@ export function IrrNpvDocument({ opts }: { opts: IrrNpvPdfOptions }): React.Reac
                 ? `at ${(opts.discountRatePct * 100).toFixed(2)}%`
                 : ""}
             </Text>
-            <Text style={styles.summaryValue}>${opts.npv?.toFixed(2) ?? "—"}</Text>
+            <Text style={styles.summaryValue}>
+              ${opts.npv !== undefined ? fmtMoney(opts.npv) : "—"}
+            </Text>
           </View>
           <View style={[styles.summaryCell, { marginRight: 0 }]}>
             <Text style={styles.summaryLabel}>Payback</Text>
@@ -120,8 +123,8 @@ export function IrrNpvDocument({ opts }: { opts: IrrNpvPdfOptions }): React.Reac
             return (
               <View key={i} style={styles.tableRow}>
                 <Text style={styles.cellDate}>{f.date}</Text>
-                <Text style={styles.cellNum}>{f.amount.toFixed(2)}</Text>
-                <Text style={styles.cellNum}>{runningBalance.toFixed(2)}</Text>
+                <Text style={styles.cellNum}>{fmtMoney(f.amount)}</Text>
+                <Text style={styles.cellNum}>{fmtMoney(runningBalance)}</Text>
                 <Text style={styles.cellMemo}>{f.memo ?? ""}</Text>
               </View>
             );
@@ -138,7 +141,7 @@ export function IrrNpvDocument({ opts }: { opts: IrrNpvPdfOptions }): React.Reac
             {opts.sensitivity.map((s, i) => (
               <View key={i} style={styles.tableRow}>
                 <Text style={styles.cellNum}>{(s.ratePct * 100).toFixed(2)}%</Text>
-                <Text style={styles.cellNum}>${s.npv.toFixed(2)}</Text>
+                <Text style={styles.cellNum}>${fmtMoney(s.npv)}</Text>
               </View>
             ))}
           </View>
