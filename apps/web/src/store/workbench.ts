@@ -78,6 +78,14 @@ interface WorkbenchState {
   currentCalcId: string | null;
   /** Bumped by each successful Save; informs the Save button label. */
   currentVersion: number;
+  /**
+   * Phase 12.5 — per-row annotations on the *schedule* (not the input
+   * grid). Keyed by ISO YYYY-MM-DD of the row's date. The Phase-21
+   * /save endpoint already accepts a `rowAnnotations: Record<string,
+   * string>` payload that lands on calculation_versions.row_annotations,
+   * so this round-trips with no schema change.
+   */
+  rowAnnotations: Record<string, string>;
 
   // Actions
   setMaster: <K extends keyof MasterUiState>(key: K, value: MasterUiState[K]) => void;
@@ -91,6 +99,23 @@ interface WorkbenchState {
   sortByDate: () => void;
   setLoanDetail: <K extends keyof LoanDetailsState>(key: K, value: LoanDetailsState[K]) => void;
   setSaveContext: (id: string, version: number) => void;
+  setRowAnnotation: (dateKey: string, note: string) => void;
+  /**
+   * Load a previously-saved calculation's `inputs` JSON (the
+   * { master, rows, loanDetails } blob the workbench writes on Save)
+   * back into the store. Replaces all state. Used by the
+   * /calculations index → "Open in workbench" flow and by the
+   * what-if duplicate action.
+   */
+  loadFromCalculation: (
+    inputs: {
+      master: MasterUiState;
+      rows: GridRow[];
+      loanDetails?: LoanDetailsState;
+      rowAnnotations?: Record<string, string>;
+    },
+    saveContext?: { id: string; version: number },
+  ) => void;
   /**
    * Phase 23 — seed the workbench from a Phase 23 loan-extraction
    * result. Maps the LoanExtraction shape (as JSON) into:
@@ -174,6 +199,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   loanDetails: { ...DEFAULT_LOAN_DETAILS },
   currentCalcId: null,
   currentVersion: 0,
+  rowAnnotations: {},
 
   setMaster: (key, value) => set((s) => ({ master: { ...s.master, [key]: value } })),
 
@@ -208,9 +234,35 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       loanDetails: { ...DEFAULT_LOAN_DETAILS },
       currentCalcId: null,
       currentVersion: 0,
+      rowAnnotations: {},
     }),
 
   setSaveContext: (id, version) => set({ currentCalcId: id, currentVersion: version }),
+
+  setRowAnnotation: (dateKey, note) =>
+    set((s) => {
+      const next = { ...s.rowAnnotations };
+      if (!note.trim()) {
+        delete next[dateKey];
+      } else {
+        next[dateKey] = note;
+      }
+      return { rowAnnotations: next };
+    }),
+
+  loadFromCalculation: (inputs, saveContext) =>
+    set({
+      master: { ...DEFAULT_MASTER, ...inputs.master },
+      rows: Array.isArray(inputs.rows) && inputs.rows.length > 0 ? inputs.rows : [emptyRow()],
+      loanDetails: { ...DEFAULT_LOAN_DETAILS, ...(inputs.loanDetails ?? {}) },
+      rowAnnotations:
+        inputs.rowAnnotations && typeof inputs.rowAnnotations === "object"
+          ? { ...inputs.rowAnnotations }
+          : {},
+      currentCalcId: saveContext?.id ?? null,
+      currentVersion: saveContext?.version ?? 0,
+      selectedRowId: null,
+    }),
 
   loadFromEvents: (rows, master) => set({ rows, master, selectedRowId: null }),
 

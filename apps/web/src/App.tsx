@@ -43,6 +43,9 @@ const ExtractPage = lazy(() => import("@/pages/Extract").then((m) => ({ default:
 const CalculationVersionsPage = lazy(() =>
   import("@/pages/CalculationVersions").then((m) => ({ default: m.CalculationVersionsPage })),
 );
+const CalculationsIndexPage = lazy(() =>
+  import("@/pages/CalculationsIndex").then((m) => ({ default: m.CalculationsIndexPage })),
+);
 const ClientsPage = lazy(() => import("@/pages/Clients").then((m) => ({ default: m.ClientsPage })));
 const ClientDetailPage = lazy(() =>
   import("@/pages/ClientDetail").then((m) => ({ default: m.ClientDetailPage })),
@@ -209,6 +212,18 @@ export function App(): JSX.Element {
                       <ShelledRoute>
                         <Suspense fallback={<RouteSpinner />}>
                           <ReportsStub />
+                        </Suspense>
+                      </ShelledRoute>
+                    </RequirePerm>
+                  }
+                />
+                <Route
+                  path="/calculations"
+                  element={
+                    <RequirePerm perm="calculation:read">
+                      <ShelledRoute>
+                        <Suspense fallback={<RouteSpinner />}>
+                          <CalculationsIndexPage />
                         </Suspense>
                       </ShelledRoute>
                     </RequirePerm>

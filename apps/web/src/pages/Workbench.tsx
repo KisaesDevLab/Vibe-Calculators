@@ -111,9 +111,12 @@ export function WorkbenchPage(): JSX.Element {
   const loanDetails = useWorkbenchStore((s) => s.loanDetails);
   const setLoanDetail = useWorkbenchStore((s) => s.setLoanDetail);
   const seedFromExtraction = useWorkbenchStore((s) => s.seedFromExtraction);
+  const loadFromCalculation = useWorkbenchStore((s) => s.loadFromCalculation);
   const currentCalcId = useWorkbenchStore((s) => s.currentCalcId);
   const currentVersion = useWorkbenchStore((s) => s.currentVersion);
   const setSaveContext = useWorkbenchStore((s) => s.setSaveContext);
+  const rowAnnotations = useWorkbenchStore((s) => s.rowAnnotations);
+  const setRowAnnotation = useWorkbenchStore((s) => s.setRowAnnotation);
   const [loanDetailsOpen, setLoanDetailsOpen] = useState(false);
   const [seriesEditorOpen, setSeriesEditorOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -121,7 +124,7 @@ export function WorkbenchPage(): JSX.Element {
   async function saveCalculation(): Promise<void> {
     setSaving(true);
     try {
-      const inputs = { master, rows, loanDetails };
+      const inputs = { master, rows, loanDetails, rowAnnotations };
       if (!currentCalcId) {
         const res = await fetch("/api/v1/calculations", {
           method: "POST",
@@ -138,7 +141,10 @@ export function WorkbenchPage(): JSX.Element {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ inputs }),
+          // The Phase-21 /save endpoint accepts rowAnnotations
+          // alongside inputs and writes it to
+          // calculation_versions.row_annotations. Pass it through.
+          body: JSON.stringify({ inputs, rowAnnotations }),
         });
         if (!res.ok) throw new Error(await readDetail(res));
         const j = (await res.json()) as { version: { version: number; id: string } };
@@ -166,6 +172,55 @@ export function WorkbenchPage(): JSX.Element {
       toast.error("Could not load extracted seed.");
     }
   }, [seedFromExtraction]);
+
+  // Phase 11.8 / 11.10 — load saved calculation by id (?id=…) or by
+  // a sessionStorage clone payload (what-if duplicate). The ?id= path
+  // refetches every mount; the clone payload is single-shot.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("id");
+    const cloneRaw = sessionStorage.getItem("vibecalc.workbench.clone");
+    if (cloneRaw) {
+      sessionStorage.removeItem("vibecalc.workbench.clone");
+      try {
+        const parsed = JSON.parse(cloneRaw) as {
+          master: MasterUiState;
+          rows: GridRow[];
+          loanDetails?: LoanDetailsState;
+        };
+        loadFromCalculation(parsed);
+        toast.success("Loaded what-if copy. Edit and Save to create a new calculation.");
+        return;
+      } catch {
+        // fall through to ?id= path
+      }
+    }
+    if (!id) return;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/v1/calculations/${encodeURIComponent(id)}`, {
+          credentials: "include",
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const j = (await res.json()) as {
+          calculation: { id: string; version: number };
+          inputs: { master: MasterUiState; rows: GridRow[]; loanDetails?: LoanDetailsState };
+        };
+        loadFromCalculation(j.inputs, {
+          id: j.calculation.id,
+          version: j.calculation.version,
+        });
+        toast.success(
+          `Loaded calculation ${j.calculation.id.slice(0, 8)} (v${j.calculation.version}).`,
+        );
+      } catch (err) {
+        toast.error(`Failed to load calculation: ${err instanceof Error ? err.message : err}`);
+      }
+    })();
+    // Mount-only intentionally: we hydrate from URL or sessionStorage
+    // exactly once. Subsequent edits in the workbench should not
+    // re-fetch and clobber the operator's in-progress changes.
+  }, [loadFromCalculation]);
 
   const [error, setError] = useState<string | null>(null);
 
@@ -444,6 +499,8 @@ export function WorkbenchPage(): JSX.Element {
           label={master.label}
           rows={rows}
           loanDetails={loanDetails}
+          rowAnnotations={rowAnnotations}
+          setRowAnnotation={setRowAnnotation}
         />
       )}
     </main>
@@ -482,12 +539,16 @@ function ResultPanel({
   master,
   rows,
   loanDetails,
+  rowAnnotations,
+  setRowAnnotation,
 }: {
   schedule: ScheduleResult;
   master: MasterUiState;
   label: string;
   rows: GridRow[];
   loanDetails: LoanDetailsState;
+  rowAnnotations: Record<string, string>;
+  setRowAnnotation: (dateKey: string, note: string) => void;
 }): JSX.Element {
   const [chart, setChart] = useState<ChartKind>("stacked");
 
@@ -605,6 +666,8 @@ function ResultPanel({
               {schedule.rows.map((r, i) => {
                 const yearEnd = isYearEnd(r.date);
                 const math = deriveMathTooltip(r, master);
+                const dateKey = r.date.toISOString().slice(0, 10);
+                const annotation = rowAnnotations[dateKey] ?? "";
                 return (
                   <tr
                     key={i}
@@ -615,7 +678,7 @@ function ResultPanel({
                       yearEnd && "bg-secondary/40 font-semibold",
                     )}
                   >
-                    <td className="px-2 py-1">{r.date.toISOString().slice(0, 10)}</td>
+                    <td className="px-2 py-1">{dateKey}</td>
                     <td className="px-2 py-1">{r.kind}</td>
                     <td className="px-2 py-1 text-right">{r.opening.toFixed(2)}</td>
                     <td className="px-2 py-1 text-right">{r.interestAccrued.toFixed(2)}</td>
@@ -623,7 +686,30 @@ function ResultPanel({
                     <td className="px-2 py-1 text-right">{r.principalApplied.toFixed(2)}</td>
                     <td className="px-2 py-1 text-right">{r.closing.toFixed(2)}</td>
                     <td className="px-2 py-1 text-right">{r.cumulativeInterest.toFixed(2)}</td>
-                    <td className="px-2 py-1 truncate max-w-xs">{r.memo ?? ""}</td>
+                    <td className="px-2 py-1 max-w-xs truncate" title={annotation || r.memo || ""}>
+                      <button
+                        type="button"
+                        className={cn(
+                          "rounded px-1 hover:bg-accent/40",
+                          annotation && "text-primary font-semibold",
+                        )}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const next = window.prompt(
+                            `Annotation for ${dateKey} (Phase 12.5 — saved with version):`,
+                            annotation,
+                          );
+                          if (next === null) return;
+                          setRowAnnotation(dateKey, next);
+                        }}
+                      >
+                        {annotation ? "📝" : "+"}
+                      </button>
+                      {annotation && <span className="ml-1 truncate text-xs">{annotation}</span>}
+                      {!annotation && r.memo && (
+                        <span className="ml-1 text-xs text-muted-foreground">{r.memo}</span>
+                      )}
+                    </td>
                   </tr>
                 );
               })}

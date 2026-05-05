@@ -39,6 +39,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { to: "/queue", label: "My queue", icon: Inbox, permission: "engagement:read" },
   { to: "/calculators", label: "Calculators", icon: Calculator },
+  { to: "/calculations", label: "Saved calcs", icon: Calculator, permission: "calculation:read" },
   { to: "/clients", label: "Clients", icon: Users, permission: "client:read" },
   { to: "/engagements", label: "Engagements", icon: FolderOpen, permission: "engagement:read" },
   { to: "/extract", label: "AI extract", icon: FileText, permission: "ai:use" },
