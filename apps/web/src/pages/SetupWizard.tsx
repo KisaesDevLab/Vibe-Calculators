@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ interface SetupStatus {
 
 export function SetupWizardPage(): JSX.Element {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [status, setStatus] = useState<SetupStatus | null>(null);
   const [token, setToken] = useState("");
   const [email, setEmail] = useState("");
@@ -79,6 +81,16 @@ export function SetupWizardPage(): JSX.Element {
         const j = (await res.json()) as { detail?: string };
         throw new Error(j.detail ?? `HTTP ${res.status}`);
       }
+      // Setup created a session cookie, but the AuthProvider's
+      // `["auth", "me"]` query was populated with `null` at app boot
+      // (no session existed then). Without invalidating, RequirePerm
+      // would read the stale null, bounce to /login, the login page
+      // would refetch and see us logged in, and finally redirect to
+      // its default landing — making setup appear to land somewhere
+      // unintended. Force a refetch and wait so the next route lookup
+      // sees the new identity.
+      await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+      await queryClient.refetchQueries({ queryKey: ["auth", "me"] });
       navigate("/clients", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
