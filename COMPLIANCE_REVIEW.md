@@ -338,27 +338,27 @@ All 7 items shipped:
 
 ## Phase 23 — AI extraction — 🟡 12 / 19
 
-| §     | Item                                   |                                                                       Status                                                                        |
-| ----- | -------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------: |
-| 23.1  | LLMProvider interface                  |                                                          ✅ — `packages/llm/src/types.ts`                                                           |
-| 23.2  | Anthropic provider                     |                                              ✅ — `packages/llm/src/anthropic.ts` (bare-fetch, no SDK)                                              |
-| 23.3  | Local provider (Qwen3-8B)              |                                             ❌ — interface ready; impl not shipped (per session scope)                                              |
-| 23.4  | Admin AI settings                      |                                           ✅ — `/admin/ai` (status + test prompt; key rotation via .env)                                            |
-| 23.5  | Privacy / redaction pipeline           | ❌ — Pino-side log redaction ✅ (`logger.ts` REDACT_PATHS) but the _prompt_ is sent verbatim to Anthropic; SSN/EIN scrubbing toggle not implemented |
-| 23.6  | Document input UI                      |                                      🟡 — paste-text only at `/extract`; PDF/DOCX file upload **not shipped**                                       |
-| 23.7  | Document parsing (pdf-parse / mammoth) |                                                                         ❌                                                                          |
-| 23.8  | Extraction prompt template             |                                                              ✅ — `loan-extraction.ts`                                                              |
-| 23.9  | Schema validation + retry              |                                                     ✅ — Zod safeParse; one retry on malformed                                                      |
-| 23.10 | Source-highlighted review UI           |                                                  ❌ — fields shown but no doc-text-with-spans pane                                                  |
-| 23.11 | Apply to workbench                     |                                                   ✅ — sessionStorage seed → workbench hydration                                                    |
-| 23.12 | Reconciliation check                   |                                 🟡 — flagged-fields surfaced; computed-vs-document-payment auto-banner not shipped                                  |
-| 23.13 | Document storage                       |                                  🟡 — `extraction_jobs` table stores text + JSON; original PDF binary not retained                                  |
-| 23.14 | Per-extraction cost ledger             |                                 🟡 — `inputTokens` / `outputTokens` columns ✅; dollar cost + admin cost report ❌                                  |
-| 23.15 | Audit-event entries for AI calls       |                               ✅ — `recordAuditEvent('calculation.create', ...)` on each extraction with token counts                               |
-| 23.16 | Offline-mode behavior                  |                                             🟡 — env var read; UI doesn't disable cloud provider button                                             |
-| 23.17 | Prompt versioning (DB-stored, A/B)     |                                                    ❌ — prompt hardcoded in `loan-extraction.ts`                                                    |
-| 23.18 | Regression fixtures                    |                      🟡 — `loan-extraction.test.ts` (5 tests against mocked LLM); 15 anonymized real-doc fixtures not shipped                       |
-| 23.19 | EXTRACTION.md                          |                                                                         ❌                                                                          |
+| §     | Item                                   |                                                                        Status                                                                        |
+| ----- | -------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------: |
+| 23.1  | LLMProvider interface                  |                                                           ✅ — `packages/llm/src/types.ts`                                                           |
+| 23.2  | Anthropic provider                     |                                              ✅ — `packages/llm/src/anthropic.ts` (bare-fetch, no SDK)                                               |
+| 23.3  | Local provider (Qwen3-8B)              |                                              ❌ — interface ready; impl not shipped (per session scope)                                              |
+| 23.4  | Admin AI settings                      |                                            ✅ — `/admin/ai` (status + test prompt; key rotation via .env)                                            |
+| 23.5  | Privacy / redaction pipeline           | ❌ — Pino-side log redaction ✅ (`logger.ts` REDACT*PATHS) but the \_prompt* is sent verbatim to Anthropic; SSN/EIN scrubbing toggle not implemented |
+| 23.6  | Document input UI                      |                                       🟡 — paste-text only at `/extract`; PDF/DOCX file upload **not shipped**                                       |
+| 23.7  | Document parsing (pdf-parse / mammoth) |                                                                          ❌                                                                          |
+| 23.8  | Extraction prompt template             |                                                              ✅ — `loan-extraction.ts`                                                               |
+| 23.9  | Schema validation + retry              |                                                      ✅ — Zod safeParse; one retry on malformed                                                      |
+| 23.10 | Source-highlighted review UI           |                                                  ❌ — fields shown but no doc-text-with-spans pane                                                   |
+| 23.11 | Apply to workbench                     |                                                    ✅ — sessionStorage seed → workbench hydration                                                    |
+| 23.12 | Reconciliation check                   |                                  🟡 — flagged-fields surfaced; computed-vs-document-payment auto-banner not shipped                                  |
+| 23.13 | Document storage                       |                                  🟡 — `extraction_jobs` table stores text + JSON; original PDF binary not retained                                   |
+| 23.14 | Per-extraction cost ledger             |                                  🟡 — `inputTokens` / `outputTokens` columns ✅; dollar cost + admin cost report ❌                                  |
+| 23.15 | Audit-event entries for AI calls       |                               ✅ — `recordAuditEvent('calculation.create', ...)` on each extraction with token counts                                |
+| 23.16 | Offline-mode behavior                  |                                             🟡 — env var read; UI doesn't disable cloud provider button                                              |
+| 23.17 | Prompt versioning (DB-stored, A/B)     |                                                    ❌ — prompt hardcoded in `loan-extraction.ts`                                                     |
+| 23.18 | Regression fixtures                    |                       🟡 — `loan-extraction.test.ts` (5 tests against mocked LLM); 15 anonymized real-doc fixtures not shipped                       |
+| 23.19 | EXTRACTION.md                          |                                                                          ❌                                                                          |
 
 ## Phase 24 — REST API / webhooks — ✅
 
