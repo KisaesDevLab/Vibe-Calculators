@@ -32,11 +32,27 @@ name: vibe-calculators
 
 x-restart: &restart unless-stopped
 
+# Container-hardening defaults applied to every service via YAML
+# anchor merge. `read_only` mounts the root filesystem read-only and
+# whitelists writable areas via tmpfs / volumes per service. Dropping
+# all capabilities and `no-new-privileges` close common container
+# escape paths.
+x-hardening: &hardening
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
 services:
   caddy:
     image: caddy:2.8.4-alpine
     container_name: vibe-calculators-caddy
     restart: *restart
+    <<: *hardening
+    # Caddy needs to bind to privileged ports 80/443; that capability
+    # is the only one we restore.
+    cap_add:
+      - NET_BIND_SERVICE
     ports:
       - "${VIBE_HTTP_PORT:-80}:80"
       - "${VIBE_HTTPS_PORT:-443}:443"
@@ -68,6 +84,16 @@ services:
     image: ghcr.io/kisaesdevlab/vibe-calculators-client:${VIBE_IMAGE_TAG:-dev}
     container_name: vibe-calculators-client
     restart: *restart
+    <<: *hardening
+    # Inner Caddy serves :80 inside the container — needs NET_BIND_SERVICE.
+    cap_add:
+      - NET_BIND_SERVICE
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run
+      - /config
+      - /data
     expose:
       - "80"
     networks:
@@ -83,6 +109,10 @@ services:
     image: ghcr.io/kisaesdevlab/vibe-calculators-server:${VIBE_IMAGE_TAG:-dev}
     container_name: vibe-calculators-server
     restart: *restart
+    <<: *hardening
+    read_only: true
+    tmpfs:
+      - /tmp
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: "3000"
@@ -126,6 +156,15 @@ services:
     image: postgres:16-alpine
     container_name: vibe-calculators-postgres
     restart: *restart
+    <<: *hardening
+    # Postgres + Alpine init writes a few transient files outside the
+    # data dir; tmpfs-mount the volatile paths and keep the data
+    # volume read-write.
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run
+      - /var/run/postgresql
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-vibecalculators}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?must be set in .env}
@@ -149,6 +188,10 @@ services:
     image: redis:7-alpine
     container_name: vibe-calculators-redis
     restart: *restart
+    <<: *hardening
+    read_only: true
+    tmpfs:
+      - /tmp
     # Require auth so a compromised sidecar / mis-firewalled host
     # can't read keys. Also enable protected-mode (the default) and
     # bind to 0.0.0.0 inside the docker network only.

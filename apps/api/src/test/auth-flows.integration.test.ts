@@ -50,6 +50,7 @@ function buildAppHarness(db: TestDb): AppHarness {
         env,
         rateLimiter,
         totpSealer,
+        kms,
         emitMagicLinkEmail: (input) => {
           captured.push({ email: input.email, token: input.token });
         },
@@ -83,7 +84,7 @@ async function seedUser(
 
 async function loginCookie(db: TestDb, userId: string): Promise<string> {
   const s = await createSession(db, { userId });
-  return `${SESSION_COOKIE_NAME}=${s.id}`;
+  return `${SESSION_COOKIE_NAME}=${s.token}`;
 }
 
 describe("auth flows — integration", () => {
@@ -135,8 +136,11 @@ describe("auth flows — integration", () => {
       .send({ newPassword: "Trombone-glacier-7!quiet-river2026" });
     expect(setPw.status).toBe(204);
 
-    // 4) Preparer sets up 2FA: receive a QR / otpauth URL
-    const setup = await request(h.app).post("/api/v1/me/2fa/setup").set("Cookie", prepCookie);
+    // 4) Preparer sets up 2FA — requires sudo re-auth (M13).
+    const setup = await request(h.app)
+      .post("/api/v1/me/2fa/setup")
+      .set("Cookie", prepCookie)
+      .send({ password: "Trombone-glacier-7!quiet-river2026" });
     expect(setup.status).toBe(200);
     expect(setup.body.otpauthUrl).toMatch(/^otpauth:\/\/totp\//);
     expect(setup.body.qrPng).toMatch(/^data:image\/png;base64,/);

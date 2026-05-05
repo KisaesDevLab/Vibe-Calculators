@@ -32,30 +32,58 @@ interface RecordedFields {
   payload: Record<string, unknown>;
 }
 
-function sortKeys(input: unknown): unknown {
-  if (Array.isArray(input)) return input.map(sortKeys);
-  if (input && typeof input === "object") {
+/**
+ * Recursive deterministic canonicalization for hash inputs.
+ *
+ * - Object keys sorted alphabetically.
+ * - Date values rendered as ISO 8601 (lossless).
+ * - undefined values dropped (matches JSON.stringify default).
+ *
+ * Future schema additions auto-propagate into the hash because the
+ * canonicalizer walks every key it sees, rather than a hand-curated
+ * field allowlist (which the old implementation used and which would
+ * silently miss new columns).
+ */
+function canonicalizeValue(input: unknown): unknown {
+  if (input === undefined) return undefined;
+  if (input === null) return null;
+  if (input instanceof Date) return input.toISOString();
+  if (Array.isArray(input)) return input.map(canonicalizeValue);
+  if (typeof input === "object") {
     const entries = Object.entries(input as Record<string, unknown>).sort(([a], [b]) =>
       a.localeCompare(b),
     );
     const out: Record<string, unknown> = {};
-    for (const [k, v] of entries) out[k] = sortKeys(v);
+    for (const [k, v] of entries) {
+      const canon = canonicalizeValue(v);
+      if (canon !== undefined) out[k] = canon;
+    }
     return out;
   }
   return input;
 }
 
+/**
+ * Canonical JSON over the recorded-row shape (everything except
+ * `rowHash` and `prevHash`, which are derived from this canonical
+ * form). The function accepts any record so it can be reused by the
+ * auth-events writer too.
+ */
+function canonicalizeRow(row: Record<string, unknown>): string {
+  const excluded = new Set(["rowHash", "prevHash", "row_hash", "prev_hash"]);
+  const filtered: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(row)) {
+    if (excluded.has(k)) continue;
+    filtered[k] = v;
+  }
+  return JSON.stringify(canonicalizeValue(filtered));
+}
+
 function canonicalize(fields: RecordedFields): string {
-  const ordered = {
-    action: fields.action,
-    actorUserId: fields.actorUserId,
-    createdAt: fields.createdAt.toISOString(),
-    entityId: fields.entityId,
-    entityKind: fields.entityKind,
-    id: fields.id,
-    payload: sortKeys(fields.payload),
-  };
-  return JSON.stringify(ordered);
+  // Reuse the generic walker via a record cast — the
+  // RecordedFields shape is keyed identically to the row columns
+  // it persists.
+  return canonicalizeRow(fields as unknown as Record<string, unknown>);
 }
 
 export function computeAuditRowHash(prevHash: string, fields: RecordedFields): string {

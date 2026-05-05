@@ -38,31 +38,40 @@ interface RecordedFields {
  * deterministic key ordering (alphabetical) so two runs over the
  * same logical row produce the same digest.
  */
-function canonicalize(fields: RecordedFields): string {
-  const ordered = {
-    actorUserId: fields.actorUserId,
-    createdAt: fields.createdAt.toISOString(),
-    id: fields.id,
-    ip: fields.ip,
-    kind: fields.kind,
-    payload: sortKeys(fields.payload),
-    userAgent: fields.userAgent,
-    userId: fields.userId,
-  };
-  return JSON.stringify(ordered);
-}
-
-function sortKeys(input: unknown): unknown {
-  if (Array.isArray(input)) return input.map(sortKeys);
-  if (input && typeof input === "object") {
+/**
+ * Canonical row hash over every column EXCEPT `rowHash`/`prevHash`
+ * (which are derived from this canonical form). Future schema
+ * additions auto-propagate into the hash; the prior implementation
+ * had a hand-curated field allowlist that would silently skip new
+ * columns.
+ */
+function canonicalizeValue(input: unknown): unknown {
+  if (input === undefined) return undefined;
+  if (input === null) return null;
+  if (input instanceof Date) return input.toISOString();
+  if (Array.isArray(input)) return input.map(canonicalizeValue);
+  if (typeof input === "object") {
     const entries = Object.entries(input as Record<string, unknown>).sort(([a], [b]) =>
       a.localeCompare(b),
     );
     const out: Record<string, unknown> = {};
-    for (const [k, v] of entries) out[k] = sortKeys(v);
+    for (const [k, v] of entries) {
+      const c = canonicalizeValue(v);
+      if (c !== undefined) out[k] = c;
+    }
     return out;
   }
   return input;
+}
+
+function canonicalize(fields: RecordedFields): string {
+  const excluded = new Set(["rowHash", "prevHash", "row_hash", "prev_hash"]);
+  const filtered: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(fields as unknown as Record<string, unknown>)) {
+    if (excluded.has(k)) continue;
+    filtered[k] = v;
+  }
+  return JSON.stringify(canonicalizeValue(filtered));
 }
 
 export function computeRowHash(prevHash: string, fields: RecordedFields): string {

@@ -86,7 +86,11 @@ export function loadSession(opts: AuthMiddlewareOptions): RequestHandler {
       req.session = resolved.session;
       const extended = await extendSession(opts.db, resolved.session);
       req.session = extended;
-      refreshSessionCookie(res, extended.id, { deployMode: opts.env.VIBE_DEPLOY_MODE });
+      // Re-issue the cookie with the SAME plaintext token (sid) — the
+      // row has been bumped, but the cookie value never changes during
+      // the session lifetime. Setting `extended.id` here would emit
+      // the hashed value to the browser and break the next request.
+      refreshSessionCookie(res, sid, { deployMode: opts.env.VIBE_DEPLOY_MODE });
       next();
     } catch (err) {
       next(err);

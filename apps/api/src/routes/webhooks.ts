@@ -3,6 +3,7 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { randomBytes } from "node:crypto";
 import { webhookSubscriptions, type Database } from "@vibe-calc/db";
+import type { KmsClient } from "../lib/kms.js";
 import { problem, requirePermission } from "../middleware/auth.js";
 
 /**
@@ -18,6 +19,13 @@ import { problem, requirePermission } from "../middleware/auth.js";
 
 export interface WebhooksRouteDeps {
   db: Database;
+  /**
+   * KMS client for sealing webhook signing secrets at rest. Webhook
+   * secrets are HMAC keys for signing outbound payloads — leaking
+   * them would let an attacker forge events into downstream systems.
+   * Sealed at issuance; unsealed at dispatch time.
+   */
+  kms: KmsClient;
 }
 
 const createSchema = z.object({
@@ -118,13 +126,17 @@ export function buildWebhooksRouter(deps: WebhooksRouteDeps): Router {
     if (!parsed.success)
       return problem(res, 400, "Bad request", "Invalid body", { issues: parsed.error.issues });
     const secret = `whsec_${randomBytes(24).toString("base64url")}`;
+    // Seal at rest. The dispatcher unseals just before signing each
+    // outbound payload; a DB read alone cannot forge events into the
+    // downstream consumer.
+    const sealedSecret = deps.kms.encrypt(secret);
     const [row] = await deps.db
       .insert(webhookSubscriptions)
       .values({
         name: parsed.data.name,
         url: parsed.data.url,
         actions: parsed.data.actions,
-        secret,
+        secret: sealedSecret,
         createdBy: req.user.id,
       })
       .returning();

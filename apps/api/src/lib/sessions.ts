@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { and, eq, gt, isNull, lt, sql } from "drizzle-orm";
 import { sessions, users, type Database, type SessionRow, type UserRow } from "@vibe-calc/db";
 
@@ -24,12 +24,27 @@ import { sessions, users, type Database, type SessionRow, type UserRow } from "@
 export const SESSION_COOKIE_NAME = "vibecalc_sid";
 export const ROLLING_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const ABSOLUTE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
-const SESSION_ID_BYTES = 32;
+const SESSION_TOKEN_BYTES = 32;
 
-/** Cryptographically random opaque session id (64 hex chars). */
-export function generateSessionId(): string {
-  return randomBytes(SESSION_ID_BYTES).toString("hex");
+/**
+ * Cryptographically random opaque cookie token (64 hex chars).
+ *
+ * The plaintext is what the browser stores; the DB stores SHA-256
+ * of this value (in the `id` column). A leaked DB row cannot be
+ * replayed as a cookie because the plaintext is recoverable only by
+ * brute-forcing the hash (32-byte preimage = infeasible).
+ */
+export function generateSessionToken(): string {
+  return randomBytes(SESSION_TOKEN_BYTES).toString("hex");
 }
+
+/** SHA-256 hex of a plaintext session token — the value that lands in `sessions.id`. */
+export function hashSessionToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+/** @deprecated kept for backward-compat with older call sites. */
+export const generateSessionId = generateSessionToken;
 
 export interface CreateSessionInput {
   userId: string;
@@ -39,9 +54,24 @@ export interface CreateSessionInput {
   now?: Date;
 }
 
-export async function createSession(db: Database, input: CreateSessionInput): Promise<SessionRow> {
+export interface CreatedSession {
+  /** The DB row (id = hashed token; do NOT send to the client). */
+  session: SessionRow;
+  /**
+   * The plaintext cookie token. Set this on the response cookie;
+   * never log it. Cannot be retrieved later — derived only at
+   * issuance.
+   */
+  token: string;
+}
+
+export async function createSession(
+  db: Database,
+  input: CreateSessionInput,
+): Promise<CreatedSession> {
   const now = input.now ?? new Date();
-  const id = generateSessionId();
+  const token = generateSessionToken();
+  const id = hashSessionToken(token);
   const [row] = await db
     .insert(sessions)
     .values({
@@ -56,7 +86,7 @@ export async function createSession(db: Database, input: CreateSessionInput): Pr
     })
     .returning();
   if (!row) throw new Error("Session insert returned no row");
-  return row;
+  return { session: row, token };
 }
 
 export interface ResolvedSession {
@@ -65,22 +95,24 @@ export interface ResolvedSession {
 }
 
 /**
- * Looks up a session by its cookie ID. Returns null if the session
- * is missing, revoked, expired (either window), or belongs to a
+ * Looks up a session by its cookie token (plaintext). Internally
+ * hashes the token and matches against `sessions.id`. Returns null
+ * if the session is missing, revoked, expired, or belongs to a
  * suspended/archived user.
  */
 export async function resolveSession(
   db: Database,
-  sessionId: string,
+  cookieToken: string,
   now: Date = new Date(),
 ): Promise<ResolvedSession | null> {
+  const id = hashSessionToken(cookieToken);
   const rows = await db
     .select({ session: sessions, user: users })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
     .where(
       and(
-        eq(sessions.id, sessionId),
+        eq(sessions.id, id),
         isNull(sessions.revokedAt),
         gt(sessions.expiresAt, now),
         gt(sessions.absoluteExpiresAt, now),
@@ -126,6 +158,19 @@ export async function revokeSession(
   now: Date = new Date(),
 ): Promise<void> {
   await db.update(sessions).set({ revokedAt: now }).where(eq(sessions.id, sessionId));
+}
+
+/**
+ * Revoke a session by its plaintext cookie token. Hashes internally
+ * before the lookup. Use this at the cookie boundary; use
+ * revokeSession() with a hashed id at internal call sites.
+ */
+export async function revokeSessionByToken(
+  db: Database,
+  token: string,
+  now: Date = new Date(),
+): Promise<void> {
+  await revokeSession(db, hashSessionToken(token), now);
 }
 
 export async function revokeAllUserSessions(

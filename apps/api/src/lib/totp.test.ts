@@ -4,7 +4,7 @@ import {
   buildEnrollment,
   generateRecoveryCodes,
   hashRecoveryCode,
-  recoveryCodeMatches,
+  verifyRecoveryCode,
   renderQrPngDataUrl,
   sealerFrom,
   verifyTotp,
@@ -75,11 +75,11 @@ describe("verifyTotp", () => {
 });
 
 describe("recovery codes", () => {
-  it("generates 10 codes formatted XXXXX-XXXXX", () => {
+  it("generates 10 codes formatted as 8-8-16 hex groups (16 bytes per code)", () => {
     const codes = generateRecoveryCodes();
     expect(codes).toHaveLength(10);
     for (const c of codes) {
-      expect(c).toMatch(/^[0-9A-F]{5}-[0-9A-F]{5}$/);
+      expect(c).toMatch(/^[0-9A-F]{8}-[0-9A-F]{8}-[0-9A-F]{16}$/);
     }
   });
 
@@ -88,17 +88,19 @@ describe("recovery codes", () => {
     expect(new Set(codes).size).toBe(50);
   });
 
-  it("hashRecoveryCode is case- and whitespace-insensitive", () => {
-    const a = hashRecoveryCode("abc12-def34");
-    const b = hashRecoveryCode("  ABC12-DEF34  ");
-    expect(a).toBe(b);
+  it("hashRecoveryCode + verifyRecoveryCode round-trip (case-/whitespace-/dash-insensitive)", async () => {
+    const stored = await hashRecoveryCode("abc12-def34");
+    expect(await verifyRecoveryCode(stored, "  ABC12-DEF34  ")).toBe(true);
+    expect(await verifyRecoveryCode(stored, "abc12def34")).toBe(true);
+    expect(await verifyRecoveryCode(stored, "ZZZZZ-ZZZZZ")).toBe(false);
   });
 
-  it("recoveryCodeMatches is constant-time and rejects unequal", () => {
-    const a = hashRecoveryCode("ABC12-DEF34");
-    const b = hashRecoveryCode("ZZZZZ-ZZZZZ");
-    expect(recoveryCodeMatches(a, a)).toBe(true);
-    expect(recoveryCodeMatches(a, b)).toBe(false);
+  it("each hash carries a distinct random salt (same plaintext → different hashes)", async () => {
+    const a = await hashRecoveryCode("ABCDE-FGHIJ");
+    const b = await hashRecoveryCode("ABCDE-FGHIJ");
+    expect(a).not.toBe(b);
+    expect(await verifyRecoveryCode(a, "ABCDE-FGHIJ")).toBe(true);
+    expect(await verifyRecoveryCode(b, "ABCDE-FGHIJ")).toBe(true);
   });
 });
 

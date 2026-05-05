@@ -24,6 +24,7 @@ describe("users schema", () => {
         "role",
         "status",
         "totpEnabled",
+        "totpLastCounter",
         "totpSecret",
         "updatedAt",
       ].sort(),
