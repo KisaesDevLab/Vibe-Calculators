@@ -34,6 +34,9 @@ const AdminAiPage = lazy(() => import("@/pages/AdminAi").then((m) => ({ default:
 const AdminFirmSettingsPage = lazy(() =>
   import("@/pages/AdminFirmSettings").then((m) => ({ default: m.AdminFirmSettingsPage })),
 );
+const AdminAiPromptsPage = lazy(() =>
+  import("@/pages/AdminAiPrompts").then((m) => ({ default: m.AdminAiPromptsPage })),
+);
 const WorkbenchPage = lazy(() =>
   import("@/pages/Workbench").then((m) => ({ default: m.WorkbenchPage })),
 );
@@ -324,6 +327,18 @@ export function App(): JSX.Element {
                       <ShelledRoute>
                         <Suspense fallback={<RouteSpinner />}>
                           <AdminFirmSettingsPage />
+                        </Suspense>
+                      </ShelledRoute>
+                    </RequirePerm>
+                  }
+                />
+                <Route
+                  path="/admin/ai-prompts"
+                  element={
+                    <RequirePerm perm="user:list">
+                      <ShelledRoute>
+                        <Suspense fallback={<RouteSpinner />}>
+                          <AdminAiPromptsPage />
                         </Suspense>
                       </ShelledRoute>
                     </RequirePerm>

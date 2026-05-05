@@ -50,6 +50,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/admin/audit", label: "Audit log", icon: Settings, permission: "audit:read" },
   { to: "/admin/firm-settings", label: "Firm settings", icon: Settings, permission: "user:list" },
   { to: "/admin/ai", label: "AI provider", icon: Settings, permission: "user:list" },
+  { to: "/admin/ai-prompts", label: "AI prompts", icon: Settings, permission: "user:list" },
 ];
 
 export function AppShell({ children }: { children: ReactNode }): JSX.Element {

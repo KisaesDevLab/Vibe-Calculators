@@ -11,9 +11,15 @@ import {
   X,
   Save,
   Send,
+  Undo2,
+  Redo2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ScheduleChart, scheduleToTsv, type ChartKind } from "@/components/schedule/ScheduleChart";
+import {
+  VirtualScheduleTable,
+  VIRTUALIZE_THRESHOLD,
+} from "@/components/schedule/VirtualScheduleTable";
 import {
   generateSchedule,
   type CashFlowEventKind,
@@ -118,6 +124,11 @@ export function WorkbenchPage(): JSX.Element {
   const setSaveContext = useWorkbenchStore((s) => s.setSaveContext);
   const rowAnnotations = useWorkbenchStore((s) => s.rowAnnotations);
   const setRowAnnotation = useWorkbenchStore((s) => s.setRowAnnotation);
+  const undo = useWorkbenchStore((s) => s.undo);
+  const redo = useWorkbenchStore((s) => s.redo);
+  const past = useWorkbenchStore((s) => s.past);
+  const future = useWorkbenchStore((s) => s.future);
+  const restoreFromLocal = useWorkbenchStore((s) => s.restoreFromLocal);
   const [loanDetailsOpen, setLoanDetailsOpen] = useState(false);
   const [seriesEditorOpen, setSeriesEditorOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -158,6 +169,34 @@ export function WorkbenchPage(): JSX.Element {
       setSaving(false);
     }
   }
+
+  // Phase 11.20 — restore localStorage snapshot once on mount, then
+  // bind cmd/ctrl+Z and cmd/ctrl+shift+Z to undo/redo. Skip the
+  // restore if a clone or extraction seed is pending — those flows
+  // will overwrite state anyway.
+  useEffect(() => {
+    const hasPendingSeed =
+      typeof window !== "undefined" &&
+      (sessionStorage.getItem("vibecalc.workbench.seed") ||
+        sessionStorage.getItem("vibecalc.workbench.clone") ||
+        new URLSearchParams(window.location.search).get("id"));
+    if (!hasPendingSeed) restoreFromLocal();
+
+    const onKey = (e: KeyboardEvent): void => {
+      const meta = e.metaKey || e.ctrlKey;
+      if (!meta) return;
+      const key = e.key.toLowerCase();
+      if (key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+      } else if ((key === "z" && e.shiftKey) || key === "y") {
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [restoreFromLocal, undo, redo]);
 
   // Phase 23 — pick up a seed left by the /extract page in
   // sessionStorage. Single-shot: consumed once and cleared.
@@ -261,6 +300,26 @@ export function WorkbenchPage(): JSX.Element {
             you type.
           </p>
         </div>
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={undo}
+          disabled={past.length === 0}
+          aria-label="Undo (cmd+Z)"
+          title="Undo (cmd+Z)"
+        >
+          <Undo2 className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={redo}
+          disabled={future.length === 0}
+          aria-label="Redo (cmd+shift+Z)"
+          title="Redo (cmd+shift+Z)"
+        >
+          <Redo2 className="h-4 w-4" />
+        </Button>
         <Button variant="outline" onClick={sortByDate} aria-label="Sort rows by date">
           <ArrowDownAZ className="h-4 w-4" />
           Sort
@@ -750,7 +809,23 @@ function ResultPanel({
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-md border border-border print:overflow-visible print:rounded-none print:border-0">
+        {schedule.rows.length > VIRTUALIZE_THRESHOLD ? (
+          <div className="print:hidden">
+            <VirtualScheduleTable
+              schedule={schedule}
+              rowAnnotations={rowAnnotations}
+              setRowAnnotation={setRowAnnotation}
+              deriveMathTooltip={(row) => deriveMathTooltip(row, master)}
+              isYearEnd={isYearEnd}
+            />
+          </div>
+        ) : null}
+        <div
+          className={cn(
+            "overflow-x-auto rounded-md border border-border print:overflow-visible print:rounded-none print:border-0",
+            schedule.rows.length > VIRTUALIZE_THRESHOLD && "hidden print:block",
+          )}
+        >
           <table className="w-full text-xs font-mono">
             <thead className="sticky top-0 bg-muted/50 text-left">
               <tr>

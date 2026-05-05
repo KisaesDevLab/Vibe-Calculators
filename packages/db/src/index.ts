@@ -26,6 +26,7 @@ export * from "./schema/schedules";
 export * from "./schema/extractions";
 export * from "./schema/api-keys";
 export * from "./schema/firm-settings";
+export * from "./schema/ai-prompts";
 
 // Convenience re-export so consumers can pass `db.query.<table>` etc.
 export * as schema from "./schema/index";

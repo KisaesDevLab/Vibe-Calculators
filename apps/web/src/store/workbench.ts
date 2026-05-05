@@ -68,6 +68,24 @@ export interface LoanDetailsState {
   custom3: string;
 }
 
+/**
+ * Phase 11.20 — undo / redo snapshot.
+ *
+ * The history stack holds the last 100 user-editable snapshots. We
+ * persist the most recent snapshot to localStorage so the workbench
+ * survives a page refresh; that's a smaller-scope alternative to the
+ * build-plan's IndexedDB target which is overkill for this workload.
+ */
+export interface WorkbenchSnapshot {
+  master: MasterUiState;
+  rows: GridRow[];
+  loanDetails: LoanDetailsState;
+  rowAnnotations: Record<string, string>;
+}
+
+const HISTORY_LIMIT = 100;
+const PERSIST_KEY = "vibecalc.workbench.persist.v1";
+
 interface WorkbenchState {
   master: MasterUiState;
   rows: GridRow[];
@@ -78,6 +96,10 @@ interface WorkbenchState {
   currentCalcId: string | null;
   /** Bumped by each successful Save; informs the Save button label. */
   currentVersion: number;
+  /** Snapshots before the current state (most recent at the end). */
+  past: WorkbenchSnapshot[];
+  /** Snapshots after the current state (most recent at the start). */
+  future: WorkbenchSnapshot[];
   /**
    * Phase 12.5 — per-row annotations on the *schedule* (not the input
    * grid). Keyed by ISO YYYY-MM-DD of the row's date. The Phase-21
@@ -100,6 +122,11 @@ interface WorkbenchState {
   setLoanDetail: <K extends keyof LoanDetailsState>(key: K, value: LoanDetailsState[K]) => void;
   setSaveContext: (id: string, version: number) => void;
   setRowAnnotation: (dateKey: string, note: string) => void;
+  /** Push current state into past, then apply mutator. */
+  undo: () => void;
+  redo: () => void;
+  /** Re-hydrate from localStorage. Called once on app boot. */
+  restoreFromLocal: () => void;
   /**
    * Load a previously-saved calculation's `inputs` JSON (the
    * { master, rows, loanDetails } blob the workbench writes on Save)
@@ -192,6 +219,57 @@ const DEFAULT_LOAN_DETAILS: LoanDetailsState = {
   custom3: "",
 };
 
+function snapshot(
+  s: Pick<WorkbenchState, "master" | "rows" | "loanDetails" | "rowAnnotations">,
+): WorkbenchSnapshot {
+  return {
+    master: { ...s.master },
+    rows: s.rows.map((r) => ({ ...r })),
+    loanDetails: { ...s.loanDetails },
+    rowAnnotations: { ...s.rowAnnotations },
+  };
+}
+
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+function persist(s: WorkbenchState): void {
+  if (typeof window === "undefined") return;
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    try {
+      window.localStorage.setItem(
+        PERSIST_KEY,
+        JSON.stringify({
+          master: s.master,
+          rows: s.rows,
+          loanDetails: s.loanDetails,
+          rowAnnotations: s.rowAnnotations,
+          currentCalcId: s.currentCalcId,
+          currentVersion: s.currentVersion,
+        }),
+      );
+    } catch {
+      // Quota or disabled storage — silent. The user loses persistence
+      // across refresh but the in-memory undo stack still works.
+    }
+  }, 500);
+}
+
+/** Mutate with history. Pushes the current snapshot onto past, clears
+ *  redo, applies the mutator, persists. */
+function withHistory<T extends Partial<WorkbenchState>>(
+  set: (updater: (s: WorkbenchState) => WorkbenchState | Partial<WorkbenchState>) => void,
+  mutator: (s: WorkbenchState) => T,
+): void {
+  set((s) => {
+    const before = snapshot(s);
+    const patch = mutator(s);
+    const past = [...s.past, before].slice(-HISTORY_LIMIT);
+    const next = { ...s, ...patch, past, future: [] as WorkbenchSnapshot[] } as WorkbenchState;
+    persist(next);
+    return next;
+  });
+}
+
 export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   master: { ...DEFAULT_MASTER },
   rows: [emptyRow()],
@@ -200,12 +278,14 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   currentCalcId: null,
   currentVersion: 0,
   rowAnnotations: {},
+  past: [],
+  future: [],
 
-  setMaster: (key, value) => set((s) => ({ master: { ...s.master, [key]: value } })),
+  setMaster: (key, value) => withHistory(set, (s) => ({ master: { ...s.master, [key]: value } })),
 
   insertRowAfter: (rowId) => {
     const r = emptyRow();
-    set((s) => {
+    withHistory(set, (s) => {
       if (rowId === null) return { rows: [...s.rows, r] };
       const idx = s.rows.findIndex((x) => x.rowId === rowId);
       const next = [...s.rows];
@@ -216,14 +296,76 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   },
 
   deleteRow: (rowId) =>
-    set((s) => ({
+    withHistory(set, (s) => ({
       rows: s.rows.length > 1 ? s.rows.filter((r) => r.rowId !== rowId) : s.rows,
     })),
 
   updateRow: (rowId, key, value) =>
-    set((s) => ({
+    withHistory(set, (s) => ({
       rows: s.rows.map((r) => (r.rowId === rowId ? { ...r, [key]: value } : r)),
     })),
+
+  undo: () =>
+    set((s) => {
+      const past = s.past;
+      if (past.length === 0) return s;
+      const previous = past[past.length - 1]!;
+      const newPast = past.slice(0, -1);
+      const present: WorkbenchSnapshot = snapshot(s);
+      const next = {
+        ...s,
+        master: previous.master,
+        rows: previous.rows,
+        loanDetails: previous.loanDetails,
+        rowAnnotations: previous.rowAnnotations,
+        past: newPast,
+        future: [present, ...s.future].slice(0, HISTORY_LIMIT),
+      };
+      persist(next);
+      return next;
+    }),
+
+  redo: () =>
+    set((s) => {
+      const future = s.future;
+      if (future.length === 0) return s;
+      const target = future[0]!;
+      const newFuture = future.slice(1);
+      const present: WorkbenchSnapshot = snapshot(s);
+      const next = {
+        ...s,
+        master: target.master,
+        rows: target.rows,
+        loanDetails: target.loanDetails,
+        rowAnnotations: target.rowAnnotations,
+        past: [...s.past, present].slice(-HISTORY_LIMIT),
+        future: newFuture,
+      };
+      persist(next);
+      return next;
+    }),
+
+  restoreFromLocal: () =>
+    set((s) => {
+      if (typeof window === "undefined") return s;
+      try {
+        const raw = window.localStorage.getItem(PERSIST_KEY);
+        if (!raw) return s;
+        const j = JSON.parse(raw) as Partial<WorkbenchState>;
+        return {
+          ...s,
+          master: { ...DEFAULT_MASTER, ...(j.master ?? {}) },
+          rows: Array.isArray(j.rows) && j.rows.length > 0 ? (j.rows as GridRow[]) : s.rows,
+          loanDetails: { ...DEFAULT_LOAN_DETAILS, ...(j.loanDetails ?? {}) },
+          rowAnnotations:
+            j.rowAnnotations && typeof j.rowAnnotations === "object" ? j.rowAnnotations : {},
+          currentCalcId: j.currentCalcId ?? null,
+          currentVersion: j.currentVersion ?? 0,
+        };
+      } catch {
+        return s;
+      }
+    }),
 
   selectRow: (rowId) => set({ selectedRowId: rowId }),
 
@@ -234,6 +376,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       loanDetails: { ...DEFAULT_LOAN_DETAILS },
       currentCalcId: null,
       currentVersion: 0,
+      past: [],
+      future: [],
       rowAnnotations: {},
     }),
 

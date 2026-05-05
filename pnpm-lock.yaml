@@ -192,6 +192,9 @@ importers:
       '@tanstack/react-query':
         specifier: 5.62.0
         version: 5.62.0(react@18.3.1)
+      '@tanstack/react-virtual':
+        specifier: 3.13.24
+        version: 3.13.24(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@vibe-calc/calc-engine':
         specifier: workspace:*
         version: link:../../packages/calc-engine
@@ -1937,6 +1940,15 @@ packages:
     resolution: {integrity: sha512-tj2ltjAn2a3fs+Dqonlvs6GyLQ/LKVJE2DVSYW+8pJ3P6/VCVGrfqv5UEchmlP7tLOvvtZcOuSyI2ooVlR5Yqw==}
     peerDependencies:
       react: ^18 || ^19
+
+  '@tanstack/react-virtual@3.13.24':
+    resolution: {integrity: sha512-aIJvz5OSkhNIhZIpYivrxrPTKYsjW9Uzy+sP/mx0S3sev2HyvPb7xmjbYvokzEpfgYHy/HjzJ2zFAETuUfgCpg==}
+    peerDependencies:
+      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+      react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+
+  '@tanstack/virtual-core@3.14.0':
+    resolution: {integrity: sha512-JLANqGy/D6k4Ujmh8Tr25lGimuOXNiaVyXaCAZS0W+1390sADdGnyUdSWNIfd49gebtIxGMij4IktRVzrdr12Q==}
 
   '@testcontainers/postgresql@10.13.2':
     resolution: {integrity: sha512-xd3u/rL8FrOBHFMu1aU+2d4sqPz9ffEb19ITtopT/tyBZWW9qCsgR6wSg0r2BJUd+2hT4UR5nR5cymi+ROkehw==}
@@ -6781,6 +6793,14 @@ snapshots:
     dependencies:
       '@tanstack/query-core': 5.62.0
       react: 18.3.1
+
+  '@tanstack/react-virtual@3.13.24(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
+    dependencies:
+      '@tanstack/virtual-core': 3.14.0
+      react: 18.3.1
+      react-dom: 18.3.1(react@18.3.1)
+
+  '@tanstack/virtual-core@3.14.0': {}
 
   '@testcontainers/postgresql@10.13.2':
     dependencies:
