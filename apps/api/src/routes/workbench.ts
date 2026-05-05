@@ -12,6 +12,7 @@ import {
 import type { Database } from "@vibe-calc/db";
 import type { EmailProvider } from "@vibe-calc/email";
 import { scheduleToPdf, scheduleToCsv, scheduleToXlsx, scheduleToDocx } from "@vibe-calc/pdf";
+import { computeSubtotals } from "@vibe-calc/calc-engine";
 import { problem } from "../middleware/auth.js";
 import { loadFirmSettings, composeBrandedFooter } from "../lib/firm-settings.js";
 
@@ -98,6 +99,16 @@ const bodySchema = z.object({
     .default({}),
   /** Optional draft watermark. */
   watermark: z.string().optional(),
+  /**
+   * Phase 13.2 — PDF grouping. When `subtotalCadence` is set the
+   * route runs computeSubtotals and passes the result to the PDF
+   * renderer for inline subtotal rows. Fiscal year-end month
+   * determines annual/quarterly group boundaries (12 = December
+   * = calendar year, default).
+   */
+  subtotalCadence: z.enum(["annual", "quarterly", "monthly"]).optional(),
+  fiscalYearEndMonth: z.number().int().min(1).max(12).optional(),
+  grandTotal: z.boolean().optional(),
 });
 
 /**
@@ -266,6 +277,17 @@ export function buildWorkbenchRouter(deps: WorkbenchRouteDeps = {}): Router {
     try {
       const operatorFooter = composeFooter(loanDetails);
       const brandedFooter = composeBrandedFooter(firm, operatorFooter);
+      // Phase 13.2 — compute subtotals when the caller asked for them.
+      const subtotals =
+        parsed.data.subtotalCadence || parsed.data.grandTotal
+          ? computeSubtotals(schedule, {
+              ...(parsed.data.fiscalYearEndMonth !== undefined
+                ? { fiscalYearEndMonth: parsed.data.fiscalYearEndMonth }
+                : {}),
+              ...(parsed.data.subtotalCadence ? { cadence: parsed.data.subtotalCadence } : {}),
+              grandTotal: parsed.data.grandTotal === true,
+            })
+          : undefined;
       buf = await scheduleToPdf(schedule, {
         calculationLabel: master.label,
         preparedBy: loanDetails.preparedBy ?? req.user.name,
@@ -273,6 +295,7 @@ export function buildWorkbenchRouter(deps: WorkbenchRouteDeps = {}): Router {
         ...(parsed.data.watermark ? { watermark: parsed.data.watermark } : {}),
         ...(brandedFooter ? { firmFooter: brandedFooter } : {}),
         ...(firm?.firmName ? { firmName: firm.firmName } : {}),
+        ...(subtotals ? { subtotals } : {}),
       });
     } catch (err) {
       return problem(

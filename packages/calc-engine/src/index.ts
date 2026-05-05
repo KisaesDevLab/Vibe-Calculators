@@ -29,5 +29,6 @@ export * from "./tvm-solver.js";
 export * from "./cashflow-events.js";
 export * from "./cashflow-schedule.js";
 export * from "./cashflow-extensions.js";
+export * from "./schedule-subtotals.js";
 export * from "./reg-z.js";
 export * from "./templates.js";

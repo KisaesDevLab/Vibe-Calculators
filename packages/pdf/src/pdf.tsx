@@ -1,5 +1,5 @@
 import { Document, Page, Text, View, StyleSheet, pdf } from "@react-pdf/renderer";
-import type { ScheduleResult } from "@vibe-calc/calc-engine";
+import type { ScheduleResult, ScheduleSubtotal } from "@vibe-calc/calc-engine";
 
 /**
  * Phase 13.1 / 13.2 — PDF export.
@@ -44,6 +44,28 @@ const styles = StyleSheet.create({
   },
   tableRowAlt: { backgroundColor: "#fafafa" },
   tableRowNeg: { backgroundColor: "#fef2f2" },
+  /**
+   * Subtotal row — Phase 13.2. Rendered between the rows that close
+   * out a fiscal year (or quarter / month). TValue-style: bold, no
+   * Opening / Closing / Cum.Interest columns, just sum of payment /
+   * interest / principal in their respective columns.
+   */
+  subtotalRow: {
+    flexDirection: "row",
+    paddingVertical: 4,
+    borderTop: "0.5pt solid #94a3b8",
+    borderBottom: "0.5pt solid #94a3b8",
+    backgroundColor: "#e2e8f0",
+    fontWeight: 700,
+  },
+  grandTotalRow: {
+    flexDirection: "row",
+    paddingVertical: 5,
+    borderTop: "1pt solid #0f172a",
+    borderBottom: "1pt solid #0f172a",
+    backgroundColor: "#cbd5e1",
+    fontWeight: 700,
+  },
   cellDate: { width: "12%", paddingHorizontal: 4 },
   cellKind: { width: "13%", paddingHorizontal: 4 },
   cellNum: { width: "12%", paddingHorizontal: 4, textAlign: "right" },
@@ -77,6 +99,13 @@ export interface AmortizationPdfOptions {
    */
   approverName?: string;
   contentHash?: string;
+  /**
+   * Phase 13.2 — subtotal markers. Computed via
+   * `computeSubtotals(schedule, ...)` in calc-engine; rendered inline
+   * in the schedule table at the indices the marker specifies.
+   * Empty/undefined = no grouping (just the flat schedule).
+   */
+  subtotals?: ScheduleSubtotal[];
 }
 
 function fmt(d: { toFixed(n: number): string }): string {
@@ -135,19 +164,55 @@ export function AmortizationDocument({
               ...(i % 2 === 1 ? [styles.tableRowAlt] : []),
               ...(r.negativeAm ? [styles.tableRowNeg] : []),
             ];
+            // Subtotal markers tied to this row index land below it
+            // (e.g. "2024 Totals" appears after the last 2024 row).
+            const subtotalsAfterThisRow =
+              opts.subtotals?.filter((s) => s.afterRowIndex === i) ?? [];
             return (
-              <View key={i} style={rowStyle}>
-                <Text style={styles.cellDate}>{r.date.toISOString().slice(0, 10)}</Text>
-                <Text style={styles.cellKind}>{r.kind}</Text>
-                <Text style={styles.cellNum}>{fmt(r.opening)}</Text>
-                <Text style={styles.cellNum}>{fmt(r.interestAccrued)}</Text>
-                <Text style={styles.cellNum}>{fmt(r.paymentApplied)}</Text>
-                <Text style={styles.cellNum}>{fmt(r.principalApplied)}</Text>
-                <Text style={styles.cellNum}>{fmt(r.closing)}</Text>
-                <Text style={styles.cellNum}>{fmt(r.cumulativeInterest)}</Text>
+              <View key={i}>
+                <View style={rowStyle}>
+                  <Text style={styles.cellDate}>{r.date.toISOString().slice(0, 10)}</Text>
+                  <Text style={styles.cellKind}>{r.kind}</Text>
+                  <Text style={styles.cellNum}>{fmt(r.opening)}</Text>
+                  <Text style={styles.cellNum}>{fmt(r.interestAccrued)}</Text>
+                  <Text style={styles.cellNum}>{fmt(r.paymentApplied)}</Text>
+                  <Text style={styles.cellNum}>{fmt(r.principalApplied)}</Text>
+                  <Text style={styles.cellNum}>{fmt(r.closing)}</Text>
+                  <Text style={styles.cellNum}>{fmt(r.cumulativeInterest)}</Text>
+                </View>
+                {subtotalsAfterThisRow.map((s, si) => (
+                  <View
+                    key={`sub-${i}-${si}`}
+                    style={s.label === "Grand Total" ? styles.grandTotalRow : styles.subtotalRow}
+                  >
+                    <Text style={[styles.cellDate, { width: "25%", fontWeight: 700 }]}>
+                      {s.label}
+                    </Text>
+                    <Text style={styles.cellNum}>{/* opening: blank */}</Text>
+                    <Text style={styles.cellNum}>{fmt(s.totalInterest)}</Text>
+                    <Text style={styles.cellNum}>{fmt(s.totalPayment)}</Text>
+                    <Text style={styles.cellNum}>{fmt(s.totalPrincipal)}</Text>
+                    <Text style={styles.cellNum}>{/* closing: blank */}</Text>
+                    <Text style={styles.cellNum}>{/* cum interest: blank */}</Text>
+                  </View>
+                ))}
               </View>
             );
           })}
+          {/* Grand total at end (afterRowIndex = lastRow but maybe also -1 for empty schedules). */}
+          {opts.subtotals
+            ?.filter((s) => s.afterRowIndex === -1)
+            .map((s, si) => (
+              <View key={`sub-end-${si}`} style={styles.grandTotalRow}>
+                <Text style={[styles.cellDate, { width: "25%", fontWeight: 700 }]}>{s.label}</Text>
+                <Text style={styles.cellNum} />
+                <Text style={styles.cellNum}>{fmt(s.totalInterest)}</Text>
+                <Text style={styles.cellNum}>{fmt(s.totalPayment)}</Text>
+                <Text style={styles.cellNum}>{fmt(s.totalPrincipal)}</Text>
+                <Text style={styles.cellNum} />
+                <Text style={styles.cellNum} />
+              </View>
+            ))}
         </View>
 
         {opts.watermark && (

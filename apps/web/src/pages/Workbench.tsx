@@ -261,6 +261,21 @@ const DAY_COUNT_OPTIONS: DayCountConvention[] = [
 
 const COMPUTE_OPTIONS: ComputeMethod[] = ["Normal", "USRule", "RuleOf78", "Canadian", "ExactDays"];
 
+const MONTH_LABELS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+] as const;
+
 export function WorkbenchPage(): JSX.Element {
   const master = useWorkbenchStore((s) => s.master);
   const rows = useWorkbenchStore((s) => s.rows);
@@ -948,6 +963,16 @@ function ResultPanel({
 }): JSX.Element {
   const [chart, setChart] = useState<ChartKind>("stacked");
   const [varianceOpen, setVarianceOpen] = useState(false);
+  /**
+   * Phase 13.2 — PDF group options. Local-only state because these
+   * are export-time choices (the operator picks them at print, they
+   * don't belong on the persisted calculation).
+   */
+  const [groupCadence, setGroupCadence] = useState<"none" | "annual" | "quarterly" | "monthly">(
+    "annual",
+  );
+  const [fiscalYearEndMonth, setFiscalYearEndMonth] = useState<number>(12);
+  const [grandTotal, setGrandTotal] = useState(true);
 
   async function copyTsv(): Promise<void> {
     try {
@@ -1027,11 +1052,17 @@ function ResultPanel({
 
   async function downloadPdf(): Promise<void> {
     try {
+      const body: Record<string, unknown> = { master, rows, loanDetails };
+      // Phase 13.2 — only send group options when the user picked a
+      // cadence; the route treats a missing cadence as "no grouping."
+      if (groupCadence !== "none") body.subtotalCadence = groupCadence;
+      if (fiscalYearEndMonth !== 12) body.fiscalYearEndMonth = fiscalYearEndMonth;
+      if (grandTotal) body.grandTotal = true;
       const res = await fetch("/api/v1/workbench/pdf", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ master, rows, loanDetails }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const text = await res.text();
@@ -1125,6 +1156,64 @@ function ResultPanel({
             emphasis={schedule.hasNegativeAm ? "warn" : "ok"}
           />
         </div>
+
+        {/*
+         * Phase 13.2 — PDF group options. Operator picks where annual
+         * subtotals land + an optional grand total. Mirrors TValue's
+         * Include Totals + Settings → Fiscal Year picker.
+         */}
+        <details className="rounded-md border border-input bg-muted/20 print:hidden">
+          <summary className="cursor-pointer px-3 py-2 text-xs font-medium uppercase text-muted-foreground">
+            PDF options · grouping {groupCadence !== "none" ? `(${groupCadence})` : "(off)"} · FY
+            ends {MONTH_LABELS[fiscalYearEndMonth - 1]}
+            {grandTotal ? " · grand total on" : ""}
+          </summary>
+          <div className="grid gap-3 px-3 py-3 sm:grid-cols-3">
+            <label className="block">
+              <span className="mb-1 block text-[10px] font-semibold uppercase text-muted-foreground">
+                Subtotal cadence
+              </span>
+              <select
+                value={groupCadence}
+                onChange={(e) => setGroupCadence(e.target.value as typeof groupCadence)}
+                className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+              >
+                <option value="none">None (flat schedule)</option>
+                <option value="annual">Annual</option>
+                <option value="quarterly">Quarterly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-[10px] font-semibold uppercase text-muted-foreground">
+                Fiscal year ends in
+              </span>
+              <select
+                value={fiscalYearEndMonth}
+                onChange={(e) => setFiscalYearEndMonth(Number(e.target.value))}
+                className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                disabled={groupCadence === "monthly" || groupCadence === "none"}
+              >
+                {MONTH_LABELS.map((m, i) => (
+                  <option key={m} value={i + 1}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+              <span className="mt-1 block text-[10px] text-muted-foreground">
+                December = calendar year. Annual / quarterly groupings tile around this boundary.
+              </span>
+            </label>
+            <label className="flex items-end gap-2 pb-1.5">
+              <input
+                type="checkbox"
+                checked={grandTotal}
+                onChange={(e) => setGrandTotal(e.target.checked)}
+              />
+              <span className="text-sm">Show grand total at end</span>
+            </label>
+          </div>
+        </details>
 
         {/*
          * Phase 11.17 — near-zero balance hint. When the schedule has
