@@ -58,6 +58,21 @@ export function VarianceDialog({
 
   const fmtVariance = `${variance > 0 ? "+" : ""}${variance.toFixed(2)}`;
 
+  // Sign convention recap so the math stays straight:
+  //   variance = engine's ending balance.
+  //   variance < 0 → overpaid (more cash out than owed); LOWER outflows
+  //     (or RAISE inflows) to bring balance back up to 0.
+  //   variance > 0 → underpaid; RAISE outflows (or LOWER inflows).
+  //
+  // For a payment-class row (outflow), new = old + variance:
+  //   variance = -0.07, base = 5396.84 → new = 5396.77 (paid $0.07 less)
+  //   variance = +0.07, base = 5396.84 → new = 5396.91 (paid $0.07 more)
+  // For a loan/deposit row (inflow), the sign reverses: new = old − variance.
+
+  function isInflowKind(kind: GridRow["kind"]): boolean {
+    return kind === "loan" || kind === "deposit";
+  }
+
   function applyLastPayment(): void {
     if (!lastPaymentRow) {
       toast.error("No payment row found to adjust.");
@@ -71,7 +86,7 @@ export function VarianceDialog({
       // engine expands count + interval rows in chronological order,
       // so the new row fires after the shrunk series.
       const baseAmount = Number(r.amount) || 0;
-      const adjustedLast = baseAmount - variance;
+      const adjustedLast = baseAmount + variance;
       updateRow(r.rowId, "count", String(count - 1));
       const newId = insertRowAfter(r.rowId);
       updateRow(newId, "kind", r.kind);
@@ -80,24 +95,35 @@ export function VarianceDialog({
       updateRow(newId, "memo", "Adjusted last payment (variance resolution)");
     } else {
       const baseAmount = Number(r.amount) || 0;
-      const adjustedLast = baseAmount - variance;
+      const adjustedLast = baseAmount + variance;
       updateRow(r.rowId, "amount", adjustedLast.toFixed(2));
     }
-    toast.success(`Last payment adjusted by ${(-variance).toFixed(2)} to zero the balance.`);
+    toast.success(
+      `Last payment adjusted by ${variance.toFixed(2)} (${variance < 0 ? "lower" : "higher"}) to zero the balance.`,
+    );
     onClose();
   }
 
   function applyBalloon(): void {
-    // Negative ending balance = overpaid → balloon refund.
-    // Positive ending balance = underpaid → balloon top-up.
-    // Either way, balloon amount = -variance (the engine treats a
-    // balloon like a payment, signed by direction).
+    // The engine treats `payment` and `balloon` as outflows (`.abs()`).
+    // We can't refund via a negative balloon amount — we'd have to
+    // switch event kind. Branch on sign:
+    //   variance < 0 (overpaid): emit a `deposit` for |variance| so
+    //     the engine adds it back to balance.
+    //   variance > 0 (underpaid): emit a `balloon` for variance so
+    //     the engine subtracts it from balance.
     const newId = insertRowAfter(null);
-    updateRow(newId, "kind", "balloon");
-    updateRow(newId, "amount", (-variance).toFixed(2));
+    if (variance < 0) {
+      updateRow(newId, "kind", "deposit");
+      updateRow(newId, "amount", Math.abs(variance).toFixed(2));
+      updateRow(newId, "memo", `Variance refund (${fmtVariance})`);
+    } else {
+      updateRow(newId, "kind", "balloon");
+      updateRow(newId, "amount", variance.toFixed(2));
+      updateRow(newId, "memo", `Variance balloon (${fmtVariance})`);
+    }
     updateRow(newId, "date", lastEventDate);
-    updateRow(newId, "memo", `Variance balloon (${fmtVariance})`);
-    toast.success(`Balloon row added: ${(-variance).toFixed(2)}.`);
+    toast.success(`Adjustment row added (${fmtVariance}).`);
     onClose();
   }
 
@@ -108,10 +134,11 @@ export function VarianceDialog({
       return;
     }
     const baseAmount = Number(target.amount) || 0;
-    updateRow(specificRowId, "amount", (baseAmount - variance).toFixed(2));
-    toast.success(
-      `Adjusted row by ${(-variance).toFixed(2)}. New amount: ${(baseAmount - variance).toFixed(2)}.`,
-    );
+    // Inflow events (loan / deposit) need the opposite-sign delta.
+    const delta = isInflowKind(target.kind) ? -variance : variance;
+    const adjusted = baseAmount + delta;
+    updateRow(specificRowId, "amount", adjusted.toFixed(2));
+    toast.success(`Adjusted row by ${delta.toFixed(2)}. New amount: ${adjusted.toFixed(2)}.`);
     onClose();
   }
 
