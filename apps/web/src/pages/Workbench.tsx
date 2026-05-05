@@ -13,8 +13,11 @@ import {
   Send,
   Undo2,
   Redo2,
+  Sigma,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
+import { solveWorkbench } from "@/lib/workbench-solver";
 import { ScheduleChart, scheduleToTsv, type ChartKind } from "@/components/schedule/ScheduleChart";
 import {
   VirtualScheduleTable,
@@ -268,6 +271,22 @@ export function WorkbenchPage(): JSX.Element {
   const sortByDate = useWorkbenchStore((s) => s.sortByDate);
   const moveRow = useWorkbenchStore((s) => s.moveRow);
   const reorderRow = useWorkbenchStore((s) => s.reorderRow);
+  const toggleUnknown = useWorkbenchStore((s) => s.toggleUnknown);
+  const clearAllUnknowns = useWorkbenchStore((s) => s.clearAllUnknowns);
+
+  function solveUnknown(): void {
+    const result = solveWorkbench(rows, master);
+    if (!result.ok) {
+      toast.error(result.reason);
+      return;
+    }
+    updateRow(result.rowId, result.field, result.value as never);
+    // Clear the U flag on the just-solved cell.
+    const flagKey =
+      result.field === "amount" ? "amount" : result.field === "rateValue" ? "rateValue" : "count";
+    toggleUnknown(result.rowId, flagKey);
+    toast.success(`Solved: ${result.field} = ${result.value}`);
+  }
   const tabs = useWorkbenchStore((s) => s.tabs);
   const activeTabId = useWorkbenchStore((s) => s.activeTabId);
   const newTab = useWorkbenchStore((s) => s.newTab);
@@ -551,6 +570,25 @@ export function WorkbenchPage(): JSX.Element {
         >
           <Redo2 className="h-4 w-4" />
         </Button>
+        <Button
+          variant="outline"
+          onClick={solveUnknown}
+          aria-label="Solve for the unknown cell"
+          title="Solve for the U-flagged cell using closed-form TVM math"
+        >
+          <Sigma className="h-4 w-4" />
+          Solve
+        </Button>
+        <Button
+          variant="outline"
+          onClick={() => {
+            if (confirm("Clear every U marker across the grid?")) clearAllUnknowns();
+          }}
+          aria-label="Restore Unknowns (clear U flags)"
+        >
+          <RefreshCw className="h-4 w-4" />
+          Restore U
+        </Button>
         <Button variant="outline" onClick={sortByDate} aria-label="Sort rows by date">
           <ArrowDownAZ className="h-4 w-4" />
           Sort
@@ -832,6 +870,7 @@ export function WorkbenchPage(): JSX.Element {
                     onInsertBelow={() => insertRowAfter(row.rowId)}
                     onMoveUp={() => moveRow(row.rowId, -1)}
                     onMoveDown={() => moveRow(row.rowId, 1)}
+                    onToggleUnknown={(key) => toggleUnknown(row.rowId, key)}
                   />
                 ))}
               </tbody>
@@ -1374,6 +1413,41 @@ function Stat({
   );
 }
 
+/**
+ * Phase 11.17 — wraps a numeric cell with a small "U" badge that
+ * toggles the Unknown flag for the cell. The badge highlights when
+ * set; the surrounding input dims so the operator visually knows
+ * "this value will be solved for."
+ */
+function CellWithUnknown({
+  isUnknown,
+  onToggleUnknown,
+  children,
+}: {
+  isUnknown: boolean;
+  onToggleUnknown: () => void;
+  children: React.ReactNode;
+}): JSX.Element {
+  return (
+    <div className="flex items-center gap-1">
+      <button
+        type="button"
+        onClick={onToggleUnknown}
+        title={isUnknown ? "Unflag (clear U)" : "Set as Unknown — Solve will fill this in"}
+        className={cn(
+          "h-6 w-6 shrink-0 rounded text-xs font-semibold transition-colors",
+          isUnknown
+            ? "bg-primary text-primary-foreground"
+            : "bg-muted text-muted-foreground hover:bg-accent",
+        )}
+      >
+        U
+      </button>
+      <span className={cn("flex-1", isUnknown && "opacity-50")}>{children}</span>
+    </div>
+  );
+}
+
 interface RowEditorProps {
   row: GridRow;
   masterCompounding: CompoundingInterval;
@@ -1382,6 +1456,7 @@ interface RowEditorProps {
   onInsertBelow: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
+  onToggleUnknown: (key: "amount" | "rateValue" | "count") => void;
 }
 
 function RowEditor({
@@ -1391,6 +1466,7 @@ function RowEditor({
   onDelete,
   onMoveUp,
   onMoveDown,
+  onToggleUnknown,
 }: RowEditorProps): JSX.Element {
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -1446,19 +1522,34 @@ function RowEditor({
         <DateInput value={row.date} onChange={(v) => onChange("date", v)} />
       </td>
       <td className="px-2 py-1 w-36">
-        <MoneyInput value={row.amount} onChange={(v) => onChange("amount", v)} symbol="" />
+        <CellWithUnknown
+          isUnknown={Boolean(row.amountUnknown)}
+          onToggleUnknown={() => onToggleUnknown("amount")}
+        >
+          <MoneyInput value={row.amount} onChange={(v) => onChange("amount", v)} symbol="" />
+        </CellWithUnknown>
       </td>
       <td className="px-2 py-1 w-32">
-        <RateInput value={row.rateValue} onChange={(v) => onChange("rateValue", v)} />
+        <CellWithUnknown
+          isUnknown={Boolean(row.rateValueUnknown)}
+          onToggleUnknown={() => onToggleUnknown("rateValue")}
+        >
+          <RateInput value={row.rateValue} onChange={(v) => onChange("rateValue", v)} />
+        </CellWithUnknown>
       </td>
       <td className="px-2 py-1 w-20">
-        <Input
-          type="text"
-          inputMode="numeric"
-          value={row.count}
-          onChange={(e: ChangeEvent<HTMLInputElement>) => onChange("count", e.target.value)}
-          className="text-right"
-        />
+        <CellWithUnknown
+          isUnknown={Boolean(row.countUnknown)}
+          onToggleUnknown={() => onToggleUnknown("count")}
+        >
+          <Input
+            type="text"
+            inputMode="numeric"
+            value={row.count}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => onChange("count", e.target.value)}
+            className="text-right"
+          />
+        </CellWithUnknown>
       </td>
       <td className="px-2 py-1 w-32">
         <select

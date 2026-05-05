@@ -36,6 +36,16 @@ export interface GridRow {
   /** Period interval; "" = inherit from master. */
   interval: CompoundingInterval | "";
   memo: string;
+  /**
+   * Phase 11.17 — Set Unknown flags. When true, the corresponding
+   * cell is the variable the solver is asked to compute. Exactly one
+   * unknown across the whole grid is supported in this round; multiple
+   * unknowns map to a system the closed-form solvers don't handle and
+   * surface a structured error.
+   */
+  amountUnknown?: boolean;
+  rateValueUnknown?: boolean;
+  countUnknown?: boolean;
 }
 
 export interface MasterUiState {
@@ -149,6 +159,10 @@ interface WorkbenchState {
   setRowAnnotation: (dateKey: string, note: string) => void;
   /** Move a row by `delta` positions (negative = up, positive = down). Out-of-range delta clamps. */
   moveRow: (rowId: string, delta: number) => void;
+  /** Phase 11.17 — toggle one of the U flags on a single cell. */
+  toggleUnknown: (rowId: string, key: "amount" | "rateValue" | "count") => void;
+  /** Phase 11.17 — clear every U flag across every row. */
+  clearAllUnknowns: () => void;
   /** Reorder a row to land directly above another. Used by drag-and-drop. */
   reorderRow: (sourceId: string, targetId: string) => void;
   /** Push current state into past, then apply mutator. */
@@ -568,6 +582,42 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       next.splice(newIdx, 0, picked);
       return { rows: next };
     }),
+
+  toggleUnknown: (rowId, key) =>
+    withHistory(set, (s) => {
+      const flagKey = `${key}Unknown` as "amountUnknown" | "rateValueUnknown" | "countUnknown";
+      // Enforce exactly-one-unknown invariant: setting a new U on a
+      // different cell clears every other U automatically. Toggling
+      // the *same* cell off doesn't clear others.
+      const targetRow = s.rows.find((r) => r.rowId === rowId);
+      const turningOn = !targetRow?.[flagKey];
+      return {
+        rows: s.rows.map((r) => {
+          if (r.rowId === rowId) {
+            return { ...r, [flagKey]: turningOn };
+          }
+          if (turningOn) {
+            const cleared = { ...r };
+            delete cleared.amountUnknown;
+            delete cleared.rateValueUnknown;
+            delete cleared.countUnknown;
+            return cleared;
+          }
+          return r;
+        }),
+      };
+    }),
+
+  clearAllUnknowns: () =>
+    withHistory(set, (s) => ({
+      rows: s.rows.map((r) => {
+        const cleared = { ...r };
+        delete cleared.amountUnknown;
+        delete cleared.rateValueUnknown;
+        delete cleared.countUnknown;
+        return cleared;
+      }),
+    })),
 
   reorderRow: (sourceId, targetId) =>
     withHistory(set, (s) => {
