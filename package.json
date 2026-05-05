@@ -32,7 +32,8 @@
   },
   "pnpm": {
     "overrides": {
-      "drizzle-orm": "0.36.4"
+      "drizzle-orm": "0.36.4",
+      "@react-pdf/font": "4.0.8"
     }
   },
   "devDependencies": {

@@ -6,6 +6,7 @@ settings:
 
 overrides:
   drizzle-orm: 0.36.4
+  '@react-pdf/font': 4.0.8
 
 importers:
 
@@ -1784,9 +1785,6 @@ packages:
 
   '@react-pdf/fns@3.1.3':
     resolution: {integrity: sha512-0I7pApDr1/RLAKbizuLy/IHTEa93LSPy/bEwYniboC3Xqnp6Od8xFJKbKEzGw2wh/5zKFFwl00g4t9RwgIMc3w==}
-
-  '@react-pdf/font@3.1.0':
-    resolution: {integrity: sha512-5q+r3DhZK41gVZp2Uw5M69FEVWeoasnM/HscW3kdpYnwjcB2bhCRWmBGCjm8fmuwQstwNPM1ZxyCWZRTRchwnA==}
 
   '@react-pdf/font@4.0.8':
     resolution: {integrity: sha512-deNd+emtZAJho1IlzKL9bRoLAGv/6oXOIKO2oZfs4RuXUrK1onLHbJO7e2YoVLPFP/sQxisRTnzdJFtd35iKwA==}
@@ -6670,12 +6668,6 @@ snapshots:
 
   '@react-pdf/fns@3.1.3': {}
 
-  '@react-pdf/font@3.1.0':
-    dependencies:
-      '@react-pdf/types': 2.11.1
-      fontkit: 2.0.4
-      is-url: 1.2.4
-
   '@react-pdf/font@4.0.8':
     dependencies:
       '@react-pdf/pdfkit': 5.1.1
@@ -6753,7 +6745,7 @@ snapshots:
   '@react-pdf/renderer@4.1.5(react@18.3.1)':
     dependencies:
       '@babel/runtime': 7.29.2
-      '@react-pdf/font': 3.1.0
+      '@react-pdf/font': 4.0.8
       '@react-pdf/layout': 4.6.1
       '@react-pdf/pdfkit': 4.1.0
       '@react-pdf/primitives': 4.3.0

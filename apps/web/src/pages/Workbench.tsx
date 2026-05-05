@@ -1118,6 +1118,25 @@ function ResultPanel({
           />
         </div>
 
+        {/*
+         * Phase 11.17 — near-zero balance hint. When the schedule has
+         * a tiny non-zero ending balance (typically because the user
+         * entered a hand-rounded payment that doesn't fully amortize),
+         * point them at the Solve workflow so they can fill in the
+         * exact value rather than puzzle over fractional cents.
+         */}
+        {Math.abs(schedule.endingBalance.toNumber()) > 0.005 &&
+          Math.abs(schedule.endingBalance.toNumber()) < 5 && (
+            <div className="rounded-md border border-amber-500/40 bg-amber-50/40 px-3 py-2 text-xs dark:bg-amber-500/10">
+              <strong>Loan not fully balanced:</strong> ending balance is{" "}
+              {schedule.endingBalance.toNumber() > 0 ? "+" : ""}
+              {schedule.endingBalance.toFixed(2)}. The payment you entered isn't the precise
+              amortizing amount. To find it, click the{" "}
+              <kbd className="rounded bg-muted px-1">U</kbd> button next to the payment's amount
+              cell, then click <strong>Solve</strong>.
+            </div>
+          )}
+
         <div className="print:hidden">
           <div className="flex gap-2 border-b border-border pb-2">
             <ChartTab active={chart === "stacked"} onClick={() => setChart("stacked")}>
