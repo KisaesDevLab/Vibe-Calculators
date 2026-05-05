@@ -56,20 +56,40 @@ const USER_TEMPLATE = (text: string): string =>
   `Extract the loan-agreement terms from the document below. If a field is ambiguous, set it to null and add a note in the "notes" field. For any field with reduced confidence (parsing was difficult, doc was unclear), record that field's confidence in "fieldConfidence" with a value 0..1.\n\n--- DOCUMENT ---\n${text}\n--- END DOCUMENT ---`;
 
 /**
+ * Optional override for the prompt body / system message. Phase 23.17
+ * — when an admin has activated a row in `ai_prompts`, the
+ * extraction route resolves it and passes it here. The user-template
+ * function still inlines the document text at the placeholder
+ * `{{document}}`; if the override doesn't include the placeholder we
+ * append the document at the end.
+ */
+export interface LoanExtractionPromptOverride {
+  body: string;
+  systemMessage?: string | null;
+}
+
+/**
  * Run the extraction prompt against the provided LLM provider and
  * return the parsed result. Throws on schema mismatch.
  */
 export async function extractLoanAgreement(
   provider: LlmProvider,
   documentText: string,
+  override?: LoanExtractionPromptOverride,
 ): Promise<{
   extraction: LoanExtraction;
   tokens: { input: number; output: number };
   responseId: string;
 }> {
+  const userPrompt = override
+    ? override.body.includes("{{document}}")
+      ? override.body.replace(/\{\{document\}\}/g, documentText)
+      : `${override.body}\n\n--- DOCUMENT ---\n${documentText}\n--- END DOCUMENT ---`
+    : USER_TEMPLATE(documentText);
+  const systemPrompt = override?.systemMessage ?? SYSTEM_PROMPT;
   const response = await provider.generate({
-    prompt: USER_TEMPLATE(documentText),
-    system: SYSTEM_PROMPT,
+    prompt: userPrompt,
+    system: systemPrompt,
     maxTokens: 4096,
     temperature: 0,
     responseSchema: schemaToJsonSchema(),

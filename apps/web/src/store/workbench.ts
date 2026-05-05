@@ -122,6 +122,10 @@ interface WorkbenchState {
   setLoanDetail: <K extends keyof LoanDetailsState>(key: K, value: LoanDetailsState[K]) => void;
   setSaveContext: (id: string, version: number) => void;
   setRowAnnotation: (dateKey: string, note: string) => void;
+  /** Move a row by `delta` positions (negative = up, positive = down). Out-of-range delta clamps. */
+  moveRow: (rowId: string, delta: number) => void;
+  /** Reorder a row to land directly above another. Used by drag-and-drop. */
+  reorderRow: (sourceId: string, targetId: string) => void;
   /** Push current state into past, then apply mutator. */
   undo: () => void;
   redo: () => void;
@@ -368,6 +372,34 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     }),
 
   selectRow: (rowId) => set({ selectedRowId: rowId }),
+
+  moveRow: (rowId, delta) =>
+    withHistory(set, (s) => {
+      const idx = s.rows.findIndex((r) => r.rowId === rowId);
+      if (idx < 0) return {};
+      const newIdx = Math.max(0, Math.min(s.rows.length - 1, idx + delta));
+      if (newIdx === idx) return {};
+      const next = [...s.rows];
+      const [picked] = next.splice(idx, 1);
+      if (!picked) return {};
+      next.splice(newIdx, 0, picked);
+      return { rows: next };
+    }),
+
+  reorderRow: (sourceId, targetId) =>
+    withHistory(set, (s) => {
+      if (sourceId === targetId) return {};
+      const sourceIdx = s.rows.findIndex((r) => r.rowId === sourceId);
+      const targetIdx = s.rows.findIndex((r) => r.rowId === targetId);
+      if (sourceIdx < 0 || targetIdx < 0) return {};
+      const next = [...s.rows];
+      const [picked] = next.splice(sourceIdx, 1);
+      if (!picked) return {};
+      // Insert before the target's *new* index after removal.
+      const insertIdx = sourceIdx < targetIdx ? targetIdx - 1 : targetIdx;
+      next.splice(insertIdx, 0, picked);
+      return { rows: next };
+    }),
 
   reset: () =>
     set({

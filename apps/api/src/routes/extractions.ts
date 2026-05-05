@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from "express";
 import multer from "multer";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
-import { extractionJobs, type Database } from "@vibe-calc/db";
+import { aiPrompts, extractionJobs, type Database } from "@vibe-calc/db";
 import { extractLoanAgreement, flagLowConfidenceFields, type LlmProvider } from "@vibe-calc/llm";
 import { problem, requirePermission } from "../middleware/auth.js";
 import { recordAuditEvent } from "../lib/audit-events.js";
@@ -172,9 +172,25 @@ export function buildExtractionsRouter(deps: ExtractionRouteDeps): Router {
     // if the provider truly needs longer, increase the env knob.
     const llmTimeoutMs = deps.llmTimeoutMs ?? 60_000;
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+
+    // Phase 23.17 — resolve the active prompt for kind=loan-extraction.
+    // If none active, falls through to the hardcoded prompt in
+    // @vibe-calc/llm/loan-extraction.
+    const [activePrompt] = await deps.db
+      .select()
+      .from(aiPrompts)
+      .where(and(eq(aiPrompts.kind, "loan-extraction"), eq(aiPrompts.active, true)))
+      .limit(1);
+
     try {
       const out = await Promise.race([
-        extractLoanAgreement(deps.llmProvider, job.documentText),
+        extractLoanAgreement(
+          deps.llmProvider,
+          job.documentText,
+          activePrompt
+            ? { body: activePrompt.body, systemMessage: activePrompt.systemMessage }
+            : undefined,
+        ),
         new Promise<never>((_, reject) => {
           timeoutHandle = setTimeout(
             () => reject(new Error(`LLM provider timed out after ${llmTimeoutMs}ms`)),

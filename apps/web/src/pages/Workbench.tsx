@@ -95,6 +95,157 @@ const INTERVAL_OPTIONS: (CompoundingInterval | "")[] = [
   "annual",
 ];
 
+/**
+ * Phase 11.18 — period-dropdown smart filtering.
+ *
+ * Approximate days per period; used to enforce "row's period must
+ * be ≥ master's" — anything shorter than the master compounding
+ * doesn't tile cleanly and the engine will mis-allocate interest
+ * across sub-period boundaries.
+ */
+const PERIOD_DAYS: Partial<Record<CompoundingInterval, number>> = {
+  daily: 1,
+  weekly: 7,
+  biweekly: 14,
+  "half-month": 15,
+  "four-week": 28,
+  monthly: 30.44,
+  "bi-monthly": 60.88,
+  quarterly: 91.31,
+  "semi-annual": 182.62,
+  annual: 365.25,
+  // continuous and exact-days don't sit on the regular calendar so
+  // we leave them out of the compatibility check; treat as "always
+  // compatible" via the fallback below.
+};
+
+function isIntervalCompatible(
+  rowInterval: CompoundingInterval | "",
+  masterCompounding: CompoundingInterval,
+): boolean {
+  if (rowInterval === "") return true; // inherit always works
+  const row = PERIOD_DAYS[rowInterval];
+  const master = PERIOD_DAYS[masterCompounding];
+  if (row === undefined || master === undefined) return true; // continuous / exact-days bypass
+  return row >= master;
+}
+
+/**
+ * Phase 11.13 — empty-state templates.
+ *
+ * Each template provides master settings + a starter row set. The
+ * operator picks one, every field is editable from there.
+ */
+interface EmptyStateTemplate {
+  label: string;
+  master: {
+    rate: string;
+    compounding: CompoundingInterval;
+    dayCount: DayCountConvention;
+    paymentTiming: 0 | 1;
+    computeMethod: ComputeMethod;
+  };
+  rows: Array<{
+    date: string;
+    kind: CashFlowEventKind;
+    amount: string;
+    rateValue?: string;
+    count?: string;
+    interval?: CompoundingInterval | "";
+    memo?: string;
+  }>;
+}
+
+const TODAY = new Date().toISOString().slice(0, 10);
+
+const EMPTY_STATE_TEMPLATES: EmptyStateTemplate[] = [
+  {
+    label: "30-year mortgage",
+    master: {
+      rate: "0.065",
+      compounding: "monthly",
+      dayCount: "30/360",
+      paymentTiming: 0,
+      computeMethod: "Normal",
+    },
+    rows: [
+      { date: TODAY, kind: "loan", amount: "300000", memo: "Principal" },
+      {
+        date: TODAY,
+        kind: "payment",
+        amount: "1896.20",
+        count: "360",
+        interval: "monthly",
+        memo: "Level monthly P&I",
+      },
+    ],
+  },
+  {
+    label: "5-year auto loan",
+    master: {
+      rate: "0.07",
+      compounding: "monthly",
+      dayCount: "30/360",
+      paymentTiming: 0,
+      computeMethod: "Normal",
+    },
+    rows: [
+      { date: TODAY, kind: "loan", amount: "30000", memo: "Vehicle financed" },
+      {
+        date: TODAY,
+        kind: "payment",
+        amount: "594.04",
+        count: "60",
+        interval: "monthly",
+        memo: "Level monthly payment",
+      },
+    ],
+  },
+  {
+    label: "10-year balloon",
+    master: {
+      rate: "0.08",
+      compounding: "monthly",
+      dayCount: "30/360",
+      paymentTiming: 0,
+      computeMethod: "Normal",
+    },
+    rows: [
+      { date: TODAY, kind: "loan", amount: "1000000" },
+      {
+        date: TODAY,
+        kind: "payment",
+        amount: "7337.65",
+        count: "120",
+        interval: "monthly",
+        memo: "30-year amortization",
+      },
+      { date: TODAY, kind: "balloon", amount: "877247", memo: "Balloon at month 120" },
+    ],
+  },
+  {
+    label: "5-year savings goal",
+    master: {
+      rate: "0.045",
+      compounding: "monthly",
+      dayCount: "30/360",
+      paymentTiming: 0,
+      computeMethod: "Normal",
+    },
+    rows: [
+      { date: TODAY, kind: "deposit", amount: "0", memo: "Starting balance" },
+      {
+        date: TODAY,
+        kind: "deposit",
+        amount: "500",
+        count: "60",
+        interval: "monthly",
+        memo: "Monthly contribution",
+      },
+    ],
+  },
+];
+
 const DAY_COUNT_OPTIONS: DayCountConvention[] = [
   "30/360",
   "30/360-US",
@@ -115,6 +266,10 @@ export function WorkbenchPage(): JSX.Element {
   const updateRow = useWorkbenchStore((s) => s.updateRow);
   const reset = useWorkbenchStore((s) => s.reset);
   const sortByDate = useWorkbenchStore((s) => s.sortByDate);
+  const moveRow = useWorkbenchStore((s) => s.moveRow);
+  const reorderRow = useWorkbenchStore((s) => s.reorderRow);
+  const setMasterRaw = useWorkbenchStore.setState;
+  void setMasterRaw;
   const loanDetails = useWorkbenchStore((s) => s.loanDetails);
   const setLoanDetail = useWorkbenchStore((s) => s.setLoanDetail);
   const seedFromExtraction = useWorkbenchStore((s) => s.seedFromExtraction);
@@ -169,6 +324,20 @@ export function WorkbenchPage(): JSX.Element {
       setSaving(false);
     }
   }
+
+  // Phase 11.2 — wire row drag-and-drop. The RowEditor dispatches a
+  // CustomEvent on drop carrying { sourceId, targetId }; the
+  // workbench listens once and forwards to the store.
+  useEffect(() => {
+    function handler(e: Event): void {
+      const detail = (e as CustomEvent<{ sourceId: string; targetId: string }>).detail;
+      if (!detail) return;
+      reorderRow(detail.sourceId, detail.targetId);
+    }
+    window.addEventListener("vibecalc.workbench.row.drop", handler as EventListener);
+    return () =>
+      window.removeEventListener("vibecalc.workbench.row.drop", handler as EventListener);
+  }, [reorderRow]);
 
   // Phase 11.20 — restore localStorage snapshot once on mount, then
   // bind cmd/ctrl+Z and cmd/ctrl+shift+Z to undo/redo. Skip the
@@ -411,6 +580,62 @@ export function WorkbenchPage(): JSX.Element {
         </CardContent>
       </Card>
 
+      {/* Empty-state template picker (Phase 11.13). */}
+      {rows.length === 1 && rows[0]?.date === "" && rows[0]?.amount === "" && !currentCalcId && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Start from a template</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="mb-3 text-sm text-muted-foreground">
+              Pick a starting shape; you can edit every field after the template lands.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {EMPTY_STATE_TEMPLATES.map((tpl) => (
+                <Button
+                  key={tpl.label}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setMaster("rate", tpl.master.rate);
+                    setMaster("compounding", tpl.master.compounding);
+                    setMaster("dayCount", tpl.master.dayCount);
+                    setMaster("paymentTiming", tpl.master.paymentTiming);
+                    setMaster("computeMethod", tpl.master.computeMethod);
+                    setMaster("label", tpl.label);
+                    // Replace rows: insert each preset row.
+                    // The store's mutators only support insertRowAfter
+                    // / updateRow, so we wipe and rebuild.
+                    const ids: string[] = [];
+                    for (let i = 0; i < tpl.rows.length; i++) {
+                      const id = insertRowAfter(null);
+                      ids.push(id);
+                    }
+                    // Drop the original placeholder row (always rowId=r2 at boot,
+                    // but find it by being the first one we didn't just insert).
+                    // Cheaper: just delete every row we didn't add.
+                    const targetIds = new Set(ids);
+                    for (const r of useWorkbenchStore.getState().rows) {
+                      if (!targetIds.has(r.rowId)) deleteRow(r.rowId);
+                    }
+                    // Now populate the new rows.
+                    tpl.rows.forEach((tr, idx) => {
+                      const id = ids[idx]!;
+                      for (const [k, v] of Object.entries(tr)) {
+                        updateRow(id, k as keyof GridRow, v as never);
+                      }
+                    });
+                    toast.success(`Loaded "${tpl.label}".`);
+                  }}
+                >
+                  {tpl.label}
+                </Button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Loan Details (Phase 11.16) — collapsible metadata block. */}
       <Card>
         <CardHeader
@@ -539,9 +764,12 @@ export function WorkbenchPage(): JSX.Element {
                   <RowEditor
                     key={row.rowId}
                     row={row}
+                    masterCompounding={master.compounding}
                     onChange={(k, v) => updateRow(row.rowId, k, v)}
                     onDelete={() => deleteRow(row.rowId)}
                     onInsertBelow={() => insertRowAfter(row.rowId)}
+                    onMoveUp={() => moveRow(row.rowId, -1)}
+                    onMoveDown={() => moveRow(row.rowId, 1)}
                   />
                 ))}
               </tbody>
@@ -1086,14 +1314,59 @@ function Stat({
 
 interface RowEditorProps {
   row: GridRow;
+  masterCompounding: CompoundingInterval;
   onChange: <K extends keyof GridRow>(key: K, value: GridRow[K]) => void;
   onDelete: () => void;
   onInsertBelow: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
 }
 
-function RowEditor({ row, onChange, onDelete }: RowEditorProps): JSX.Element {
+function RowEditor({
+  row,
+  masterCompounding,
+  onChange,
+  onDelete,
+  onMoveUp,
+  onMoveDown,
+}: RowEditorProps): JSX.Element {
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  function onContextMenu(e: React.MouseEvent): void {
+    e.preventDefault();
+    setMenuOpen(true);
+  }
+
+  function onDragStart(e: React.DragEvent<HTMLTableRowElement>): void {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", row.rowId);
+  }
+  function onDragOver(e: React.DragEvent<HTMLTableRowElement>): void {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  }
+  function onDrop(e: React.DragEvent<HTMLTableRowElement>): void {
+    e.preventDefault();
+    const sourceId = e.dataTransfer.getData("text/plain");
+    if (!sourceId || sourceId === row.rowId) return;
+    // Workbench-level handler (passed via window event) wires the
+    // actual reorder; the row only knows its own id.
+    window.dispatchEvent(
+      new CustomEvent("vibecalc.workbench.row.drop", {
+        detail: { sourceId, targetId: row.rowId },
+      }),
+    );
+  }
+
   return (
-    <tr className="border-t border-border">
+    <tr
+      className="relative border-t border-border"
+      draggable
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      onContextMenu={onContextMenu}
+    >
       <td className="px-2 py-1">
         <select
           value={row.kind}
@@ -1130,12 +1403,21 @@ function RowEditor({ row, onChange, onDelete }: RowEditorProps): JSX.Element {
           value={row.interval}
           onChange={(e) => onChange("interval", e.target.value as GridRow["interval"])}
           className="h-9 rounded-md border border-input bg-background px-2 text-xs"
+          title={
+            row.interval && !isIntervalCompatible(row.interval, masterCompounding)
+              ? `Incompatible with master compounding (${masterCompounding}). Pick a period equal to or longer than the master.`
+              : undefined
+          }
         >
-          {INTERVAL_OPTIONS.map((iv) => (
-            <option key={iv || "_"} value={iv}>
-              {iv === "" ? "(inherit)" : iv}
-            </option>
-          ))}
+          {INTERVAL_OPTIONS.map((iv) => {
+            const compatible = isIntervalCompatible(iv, masterCompounding);
+            return (
+              <option key={iv || "_"} value={iv} disabled={!compatible}>
+                {iv === "" ? "(inherit)" : iv}
+                {!compatible ? " (too short for master)" : ""}
+              </option>
+            );
+          })}
         </select>
       </td>
       <td className="px-2 py-1">
@@ -1144,10 +1426,47 @@ function RowEditor({ row, onChange, onDelete }: RowEditorProps): JSX.Element {
           onChange={(e: ChangeEvent<HTMLInputElement>) => onChange("memo", e.target.value)}
         />
       </td>
-      <td className="px-2 py-1">
+      <td className="relative px-2 py-1">
         <Button variant="ghost" size="icon" onClick={onDelete} aria-label="Delete row">
           <Trash2 className="h-4 w-4" />
         </Button>
+        {menuOpen && (
+          <div
+            className="absolute right-2 top-9 z-10 w-44 rounded-md border border-border bg-popover p-1 text-sm shadow-md"
+            onMouseLeave={() => setMenuOpen(false)}
+          >
+            <button
+              type="button"
+              className="block w-full rounded px-2 py-1 text-left hover:bg-accent"
+              onClick={() => {
+                onMoveUp();
+                setMenuOpen(false);
+              }}
+            >
+              Move up
+            </button>
+            <button
+              type="button"
+              className="block w-full rounded px-2 py-1 text-left hover:bg-accent"
+              onClick={() => {
+                onMoveDown();
+                setMenuOpen(false);
+              }}
+            >
+              Move down
+            </button>
+            <button
+              type="button"
+              className="block w-full rounded px-2 py-1 text-left text-destructive hover:bg-destructive/10"
+              onClick={() => {
+                onDelete();
+                setMenuOpen(false);
+              }}
+            >
+              Delete
+            </button>
+          </div>
+        )}
       </td>
     </tr>
   );
