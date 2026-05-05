@@ -561,7 +561,7 @@ function ResultPanel({
     }
   }
 
-  async function downloadFormat(format: "csv" | "xlsx", _mime: string): Promise<void> {
+  async function downloadFormat(format: "csv" | "xlsx" | "docx", _mime: string): Promise<void> {
     try {
       const res = await fetch(`/api/v1/workbench/${format}`, {
         method: "POST",
@@ -656,6 +656,18 @@ function ResultPanel({
             }
           >
             XLSX
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              void downloadFormat(
+                "docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+              )
+            }
+          >
+            DOCX
           </Button>
           <span
             className="ml-2 inline-flex items-center gap-1 text-xs text-muted-foreground"

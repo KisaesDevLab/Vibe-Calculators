@@ -30,6 +30,7 @@ const AdminWebhooksPage = lazy(() =>
 const AdminAuditLogPage = lazy(() =>
   import("@/pages/AdminAuditLog").then((m) => ({ default: m.AdminAuditLogPage })),
 );
+const AdminAiPage = lazy(() => import("@/pages/AdminAi").then((m) => ({ default: m.AdminAiPage })));
 const WorkbenchPage = lazy(() =>
   import("@/pages/Workbench").then((m) => ({ default: m.WorkbenchPage })),
 );
@@ -296,6 +297,18 @@ export function App(): JSX.Element {
                       <ShelledRoute>
                         <Suspense fallback={<RouteSpinner />}>
                           <AdminAuditLogPage />
+                        </Suspense>
+                      </ShelledRoute>
+                    </RequirePerm>
+                  }
+                />
+                <Route
+                  path="/admin/ai"
+                  element={
+                    <RequirePerm perm="user:list">
+                      <ShelledRoute>
+                        <Suspense fallback={<RouteSpinner />}>
+                          <AdminAiPage />
                         </Suspense>
                       </ShelledRoute>
                     </RequirePerm>

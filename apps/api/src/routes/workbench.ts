@@ -9,7 +9,7 @@ import {
   type ComputeMethod,
   type DayCountConvention,
 } from "@vibe-calc/calc-engine";
-import { scheduleToPdf, scheduleToCsv, scheduleToXlsx } from "@vibe-calc/pdf";
+import { scheduleToPdf, scheduleToCsv, scheduleToXlsx, scheduleToDocx } from "@vibe-calc/pdf";
 import { problem } from "../middleware/auth.js";
 
 /**
@@ -294,6 +294,49 @@ export function buildWorkbenchRouter(): Router {
       `attachment; filename="${slugify(result.data.master.label || "schedule")}-${today}.csv"`,
     );
     res.send(csv);
+  });
+
+  router.post("/docx", async (req: Request, res: Response) => {
+    if (!req.user) return problem(res, 401, "Unauthorized", "Authentication required");
+    const result = await buildScheduleFromBody(req.body);
+    if (!result.ok) {
+      return problem(
+        res,
+        result.status,
+        result.title,
+        result.detail,
+        result.issues ? { issues: result.issues } : undefined,
+      );
+    }
+    let buf: Buffer;
+    try {
+      const preparedOn = result.data.loanDetails.preparedOn
+        ? new Date(result.data.loanDetails.preparedOn)
+        : new Date();
+      buf = await scheduleToDocx(result.schedule, {
+        calculationLabel: result.data.master.label,
+        preparedBy: result.data.loanDetails.preparedBy ?? req.user.name,
+        preparedOn,
+        ...(result.data.loanDetails.notes ? { narrative: result.data.loanDetails.notes } : {}),
+      });
+    } catch (err) {
+      return problem(
+        res,
+        500,
+        "DOCX render failed",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${slugify(result.data.master.label || "schedule")}-${today}.docx"`,
+    );
+    res.send(buf);
   });
 
   router.post("/xlsx", async (req: Request, res: Response) => {

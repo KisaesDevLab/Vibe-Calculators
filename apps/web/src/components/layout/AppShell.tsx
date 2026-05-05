@@ -48,6 +48,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/admin/api-keys", label: "API keys", icon: Settings, permission: "user:list" },
   { to: "/admin/webhooks", label: "Webhooks", icon: Settings, permission: "user:list" },
   { to: "/admin/audit", label: "Audit log", icon: Settings, permission: "audit:read" },
+  { to: "/admin/ai", label: "AI provider", icon: Settings, permission: "user:list" },
 ];
 
 export function AppShell({ children }: { children: ReactNode }): JSX.Element {
