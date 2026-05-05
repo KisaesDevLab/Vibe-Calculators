@@ -157,6 +157,17 @@ services:
     container_name: vibe-calculators-postgres
     restart: *restart
     <<: *hardening
+    # Postgres entrypoint starts as root, chowns PGDATA to the
+    # `postgres` user, then exec-drops via gosu. That sequence needs
+    # CHOWN/DAC_OVERRIDE/FOWNER plus SETUID/SETGID for the privilege
+    # drop. cap_drop: ALL (from x-hardening) without these would loop
+    # the entrypoint on "Operation not permitted".
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
     # Postgres + Alpine init writes a few transient files outside the
     # data dir; tmpfs-mount the volatile paths and keep the data
     # volume read-write.
@@ -189,6 +200,15 @@ services:
     container_name: vibe-calculators-redis
     restart: *restart
     <<: *hardening
+    # Same rationale as postgres: redis-alpine starts as root and
+    # exec-drops to the `redis` user via su-exec. Needs the privilege-
+    # drop caps even though the running daemon is unprivileged.
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
     read_only: true
     tmpfs:
       - /tmp

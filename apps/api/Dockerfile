@@ -44,9 +44,14 @@ FROM fetch AS build
 COPY package.json tsconfig.base.json tsconfig.json ./
 COPY apps/api ./apps/api
 COPY packages ./packages
+COPY scripts ./scripts
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm install --frozen-lockfile --offline --ignore-scripts
 RUN pnpm --filter @vibe-calc/api... build
+# tsconfig.base.json uses moduleResolution: Bundler, which lets TS
+# accept extensionless relative imports during typecheck. Native Node
+# ESM in the distroless runtime doesn't — see scripts/fix-esm-extensions.mjs.
+RUN node scripts/fix-esm-extensions.mjs
 
 # ----------------------------------------------------------------------
 FROM build AS prune
