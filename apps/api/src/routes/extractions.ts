@@ -4,6 +4,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { aiPrompts, extractionJobs, type Database } from "@vibe-calc/db";
 import { extractLoanAgreement, flagLowConfidenceFields, type LlmProvider } from "@vibe-calc/llm";
+import type { KmsClient } from "../lib/kms.js";
 import { problem, requirePermission } from "../middleware/auth.js";
 import { recordAuditEvent } from "../lib/audit-events.js";
 import { userOwnsExtraction } from "../lib/ownership.js";
@@ -25,7 +26,10 @@ import { parseDocument, DocumentParseError, redactSensitive } from "../lib/docum
 
 export interface ExtractionRouteDeps {
   db: Database;
+  /** Boot-time fallback provider. The route prefers DB-resolved when kms is supplied. */
   llmProvider?: LlmProvider | undefined;
+  /** When set, the route resolves the current provider from DB+env per-request. */
+  kms?: KmsClient | undefined;
   /** Threshold below which a field is flagged for review. Default 0.7. */
   confidenceThreshold?: number;
   /** Hard timeout for the LLM call. Default 60s. */
@@ -149,7 +153,26 @@ export function buildExtractionsRouter(deps: ExtractionRouteDeps): Router {
     ) {
       return problem(res, 404, "Not found", "Extraction not found");
     }
-    if (!deps.llmProvider) {
+    // Phase 23.4 — resolve the current provider per-request so the
+    // admin's saved DB config takes effect without a server restart.
+    // Falls back to the boot-time provider when KMS isn't supplied
+    // (e.g. some integration test paths).
+    let provider: LlmProvider | undefined;
+    if (deps.kms) {
+      const { resolveLlmProvider } = await import("../lib/ai-provider-resolver.js");
+      const resolved = await resolveLlmProvider(deps.db, deps.kms, {
+        ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+        VIBE_LLM_DEFAULT_MODEL: process.env.VIBE_LLM_DEFAULT_MODEL,
+        VIBE_LLM_PROVIDER: process.env.VIBE_LLM_PROVIDER,
+        VIBE_LLM_LOCAL_URL: process.env.VIBE_LLM_LOCAL_URL,
+        VIBE_LLM_LOCAL_MODEL: process.env.VIBE_LLM_LOCAL_MODEL,
+        VIBE_LLM_LOCAL_API_KEY: process.env.VIBE_LLM_LOCAL_API_KEY,
+        VIBE_OFFLINE: process.env.VIBE_OFFLINE === "true",
+      });
+      if (resolved) provider = resolved.provider;
+    }
+    if (!provider) provider = deps.llmProvider;
+    if (!provider) {
       return problem(res, 503, "Service unavailable", "No LLM provider configured");
     }
 
@@ -185,7 +208,7 @@ export function buildExtractionsRouter(deps: ExtractionRouteDeps): Router {
     try {
       const out = await Promise.race([
         extractLoanAgreement(
-          deps.llmProvider,
+          provider,
           job.documentText,
           activePrompt
             ? { body: activePrompt.body, systemMessage: activePrompt.systemMessage }
@@ -231,7 +254,7 @@ export function buildExtractionsRouter(deps: ExtractionRouteDeps): Router {
           flaggedFields: flagged,
           inputTokens: out.tokens.input,
           outputTokens: out.tokens.output,
-          provider: deps.llmProvider.name,
+          provider: provider.name,
         },
       });
       res.json({ extraction: serialize(updated ?? job), flaggedFields: flagged });

@@ -134,6 +134,13 @@
       "when": 1778875200000,
       "tag": "0018_webhook_deliveries_and_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1778961600000,
+      "tag": "0019_ai_provider_settings",
+      "breakpoints": true
     }
   ]
 }

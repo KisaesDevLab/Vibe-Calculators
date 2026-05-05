@@ -19,4 +19,5 @@ export * from "./firm-settings";
 export * from "./ai-prompts";
 export * from "./export-jobs";
 export * from "./webhook-deliveries";
+export * from "./ai-provider-settings";
 export * from "./relations";

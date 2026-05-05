@@ -132,6 +132,7 @@ export function createApp(options: ServerOptions = {}): Express {
           ? { llmProvider: options.auth.routes.llmProvider }
           : {}),
         db: options.auth.routes.db,
+        kms: options.auth.routes.kms,
       }),
     );
     app.use("/api/v1/admin/firm-settings", buildFirmSettingsRouter(options.auth.routes));

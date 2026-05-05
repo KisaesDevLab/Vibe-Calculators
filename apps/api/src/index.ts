@@ -213,7 +213,7 @@ const emitMagicLinkEmail = async (input: {
 // Number of migration tags shipped with this release; bumped each
 // time a new file lands in packages/db/drizzle/. The deep-health
 // schema-version probe asserts the applied count matches.
-const EXPECTED_MIGRATIONS = 19; // 0000..0018
+const EXPECTED_MIGRATIONS = 20; // 0000..0019
 
 const app = createApp({
   health: {
