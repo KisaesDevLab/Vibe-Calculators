@@ -27,6 +27,8 @@ await import("@vibe-calc/tax-engine");
 const { registerTvmCalculators } = await import("./lib/tvm-calculators.js");
 registerTvmCalculators();
 
+const { AnthropicProvider } = await import("@vibe-calc/llm");
+
 // Drizzle DB used by every auth-aware route.
 const { db, pool } = createDatabase({ connectionString: env.DATABASE_URL });
 
@@ -66,6 +68,24 @@ try {
     { reason: err instanceof Error ? err.message : String(err) },
     "email provider not configured — magic-link emails will be logged only",
   );
+}
+
+// Optional LLM provider for Phase 23 loan-extraction. The appliance
+// reads ANTHROPIC_API_KEY (and optional VIBE_LLM_DEFAULT_MODEL) from
+// .env. When unset, the extractions route returns 503 with a clear
+// "no LLM provider configured" message — the rest of the appliance
+// works offline-clean.
+const llmProvider =
+  process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY.trim().length > 0
+    ? new AnthropicProvider({
+        apiKey: process.env.ANTHROPIC_API_KEY,
+        defaultModel: process.env.VIBE_LLM_DEFAULT_MODEL ?? undefined,
+      })
+    : undefined;
+if (llmProvider) {
+  logger.info({ model: process.env.VIBE_LLM_DEFAULT_MODEL ?? "default" }, "LLM provider ready");
+} else {
+  logger.info("LLM provider not configured — Phase 23 extractions will return 503");
 }
 
 const emitMagicLinkEmail = async (input: {
@@ -114,6 +134,7 @@ const app = createApp({
       totpSealer,
       kms,
       emitMagicLinkEmail,
+      llmProvider,
     },
   },
 });

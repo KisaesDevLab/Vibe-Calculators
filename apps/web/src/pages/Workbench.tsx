@@ -90,6 +90,9 @@ export function WorkbenchPage(): JSX.Element {
   const updateRow = useWorkbenchStore((s) => s.updateRow);
   const reset = useWorkbenchStore((s) => s.reset);
   const sortByDate = useWorkbenchStore((s) => s.sortByDate);
+  const loanDetails = useWorkbenchStore((s) => s.loanDetails);
+  const setLoanDetail = useWorkbenchStore((s) => s.setLoanDetail);
+  const [loanDetailsOpen, setLoanDetailsOpen] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
 
@@ -198,6 +201,86 @@ export function WorkbenchPage(): JSX.Element {
             </select>
           </Field>
         </CardContent>
+      </Card>
+
+      {/* Loan Details (Phase 11.16) — collapsible metadata block. */}
+      <Card>
+        <CardHeader
+          className="flex flex-row items-center justify-between cursor-pointer"
+          onClick={() => setLoanDetailsOpen((o) => !o)}
+        >
+          <CardTitle className="text-base">Loan details (PDF metadata)</CardTitle>
+          <Button variant="ghost" size="sm">
+            {loanDetailsOpen ? "Hide" : "Show"}
+          </Button>
+        </CardHeader>
+        {loanDetailsOpen && (
+          <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
+            <Field label="Borrower">
+              <Input
+                value={loanDetails.borrowerName}
+                onChange={(e) => setLoanDetail("borrowerName", e.target.value)}
+              />
+            </Field>
+            <Field label="Lender">
+              <Input
+                value={loanDetails.lenderName}
+                onChange={(e) => setLoanDetail("lenderName", e.target.value)}
+              />
+            </Field>
+            <Field label="Loan type">
+              <Input
+                value={loanDetails.loanType}
+                onChange={(e) => setLoanDetail("loanType", e.target.value)}
+              />
+            </Field>
+            <Field label="Prepared by">
+              <Input
+                value={loanDetails.preparedBy}
+                onChange={(e) => setLoanDetail("preparedBy", e.target.value)}
+              />
+            </Field>
+            <Field label="Prepared on">
+              <DateInput
+                value={loanDetails.preparedOn}
+                onChange={(v) => setLoanDetail("preparedOn", v)}
+              />
+            </Field>
+            <Field label="Original loan date">
+              <DateInput
+                value={loanDetails.originalLoanDate}
+                onChange={(v) => setLoanDetail("originalLoanDate", v)}
+              />
+            </Field>
+            <Field label="Custom 1">
+              <Input
+                value={loanDetails.custom1}
+                onChange={(e) => setLoanDetail("custom1", e.target.value)}
+              />
+            </Field>
+            <Field label="Custom 2">
+              <Input
+                value={loanDetails.custom2}
+                onChange={(e) => setLoanDetail("custom2", e.target.value)}
+              />
+            </Field>
+            <Field label="Custom 3">
+              <Input
+                value={loanDetails.custom3}
+                onChange={(e) => setLoanDetail("custom3", e.target.value)}
+              />
+            </Field>
+            <div className="sm:col-span-2 md:col-span-3">
+              <Field label="Notes (PDF appendix)">
+                <textarea
+                  className="h-24 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm"
+                  value={loanDetails.notes}
+                  onChange={(e) => setLoanDetail("notes", e.target.value)}
+                />
+              </Field>
+            </div>
+          </CardContent>
+        )}
       </Card>
 
       {/* Event grid */}

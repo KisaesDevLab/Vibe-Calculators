@@ -47,10 +47,32 @@ export interface MasterUiState {
   computeMethod: ComputeMethod;
 }
 
+/**
+ * Phase 11.16 — Loan Details metadata.
+ *
+ * These fields don't affect the math; they flow into the PDF header
+ * (preparer / borrower / lender block) and any future scheduling-
+ * narrative templates. Stored in zustand alongside the master so a
+ * "Save calculation" round-trip preserves them.
+ */
+export interface LoanDetailsState {
+  borrowerName: string;
+  lenderName: string;
+  loanType: string;
+  preparedBy: string;
+  preparedOn: string; // ISO YYYY-MM-DD; blank = use today at PDF time
+  originalLoanDate: string;
+  notes: string;
+  custom1: string;
+  custom2: string;
+  custom3: string;
+}
+
 interface WorkbenchState {
   master: MasterUiState;
   rows: GridRow[];
   selectedRowId: string | null;
+  loanDetails: LoanDetailsState;
 
   // Actions
   setMaster: <K extends keyof MasterUiState>(key: K, value: MasterUiState[K]) => void;
@@ -62,6 +84,7 @@ interface WorkbenchState {
   loadFromEvents: (rows: GridRow[], master: MasterUiState) => void;
   /** Sort the grid rows in-place by ISO date ascending. Empty dates sink to the bottom. */
   sortByDate: () => void;
+  setLoanDetail: <K extends keyof LoanDetailsState>(key: K, value: LoanDetailsState[K]) => void;
 }
 
 let nextId = 1;
@@ -92,10 +115,24 @@ const DEFAULT_MASTER: MasterUiState = {
   computeMethod: "Normal",
 };
 
+const DEFAULT_LOAN_DETAILS: LoanDetailsState = {
+  borrowerName: "",
+  lenderName: "",
+  loanType: "",
+  preparedBy: "",
+  preparedOn: "",
+  originalLoanDate: "",
+  notes: "",
+  custom1: "",
+  custom2: "",
+  custom3: "",
+};
+
 export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   master: { ...DEFAULT_MASTER },
   rows: [emptyRow()],
   selectedRowId: null,
+  loanDetails: { ...DEFAULT_LOAN_DETAILS },
 
   setMaster: (key, value) => set((s) => ({ master: { ...s.master, [key]: value } })),
 
@@ -123,9 +160,16 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
 
   selectRow: (rowId) => set({ selectedRowId: rowId }),
 
-  reset: () => set({ master: { ...DEFAULT_MASTER }, rows: [emptyRow()] }),
+  reset: () =>
+    set({
+      master: { ...DEFAULT_MASTER },
+      rows: [emptyRow()],
+      loanDetails: { ...DEFAULT_LOAN_DETAILS },
+    }),
 
   loadFromEvents: (rows, master) => set({ rows, master, selectedRowId: null }),
+
+  setLoanDetail: (key, value) => set((s) => ({ loanDetails: { ...s.loanDetails, [key]: value } })),
 
   sortByDate: () =>
     set((s) => ({

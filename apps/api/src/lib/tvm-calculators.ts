@@ -411,6 +411,274 @@ const sinkingCalc: TaxCalculator<SinkingI, SinkingO> = {
 };
 
 // ---------------------------------------------------------------------
+// Phase 9.5 — TDR present-value-of-modified-cash-flows.
+// Original effective rate × modified cash-flow stream → PV. Per
+// ASC 310-40 / 326, the original rate (NOT the new rate) is the
+// discount rate for the modified flows.
+// ---------------------------------------------------------------------
+
+const tdrInput = z.object({
+  carryingAmount: z.number().positive().finite(),
+  originalEffectiveRate: z.number().min(0).max(1),
+  modifiedFlows: z.array(z.object({ date: z.string(), amount: z.number().finite() })).min(1),
+  asOfDate: z.string(),
+  dayCount: dayCounts.default("30/360"),
+});
+type TdrI = z.infer<typeof tdrInput>;
+const tdrOutput = z.object({
+  pvOfModifiedFlows: z.number(),
+  impairmentLoss: z.number(),
+});
+type TdrO = z.infer<typeof tdrOutput>;
+
+const tdrCalc: TaxCalculator<TdrI, TdrO> = {
+  metadata: {
+    kind: "tvm.tdr",
+    name: "TDR — PV of modified cash flows",
+    description:
+      "Troubled-debt restructuring impairment: PV the modified payment stream at the original effective rate; impairment = carrying amount − PV.",
+    taxYears: [],
+    formReferences: ["ASC 310-40", "ASC 326"],
+    requiredTables: [],
+  },
+  inputSchema: tdrInput,
+  outputSchema: tdrOutput,
+  validateInputs(raw): ValidationResult<TdrI> {
+    const r = tdrInput.safeParse(raw);
+    return r.success
+      ? { ok: true, value: r.data }
+      : {
+          ok: false,
+          issues: r.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+        };
+  },
+  compute(input) {
+    const flows = [
+      { date: new Date(input.asOfDate), amount: money(0) },
+      ...input.modifiedFlows.map((f) => ({
+        date: new Date(f.date),
+        amount: money(f.amount),
+      })),
+    ];
+    const pv = num(npv(flows, rate(input.originalEffectiveRate), input.dayCount));
+    return {
+      pvOfModifiedFlows: pv,
+      impairmentLoss: input.carryingAmount - pv,
+    };
+  },
+  narrate(input, output) {
+    const sign = output.impairmentLoss >= 0 ? "loss" : "gain";
+    return `Carrying amount $${input.carryingAmount.toLocaleString()} less PV of ${input.modifiedFlows.length} modified payments at ${(input.originalEffectiveRate * 100).toFixed(3)}% (${input.dayCount}) = $${output.pvOfModifiedFlows.toFixed(2)}; impairment ${sign} $${Math.abs(output.impairmentLoss).toFixed(2)}.`;
+  },
+};
+
+// ---------------------------------------------------------------------
+// Phase 9.6 / 9.7 — Imputed interest under §7872 (below-market loan).
+// Stated rate < AFR → §7872 imputes the gap. We surface the headline
+// (AFR − stated) × principal × term/12 number plus a treatment note
+// per loan type.
+// ---------------------------------------------------------------------
+
+const imputedInput = z.object({
+  loanAmount: z.number().positive().finite(),
+  statedRate: z.number().min(0).max(1).default(0),
+  afrRate: z.number().min(0).max(1),
+  termMonths: z.number().int().positive(),
+  loanType: z
+    .enum(["gift", "compensation_related", "corporation_shareholder", "demand"])
+    .default("gift"),
+});
+type ImputedI = z.infer<typeof imputedInput>;
+const imputedOutput = z.object({
+  rateGap: z.number(),
+  totalImputedInterest: z.number(),
+  annualImputedInterest: z.number(),
+});
+type ImputedO = z.infer<typeof imputedOutput>;
+
+const imputedCalc: TaxCalculator<ImputedI, ImputedO> = {
+  metadata: {
+    kind: "tvm.imputed-interest-7872",
+    name: "Imputed interest (§7872 below-market loan)",
+    description:
+      "Applies the AFR-vs-stated-rate gap to the loan principal over the term to surface the imputed interest §7872 attributes to the lender. Choose loan type for the treatment narrative.",
+    taxYears: [],
+    formReferences: ["IRC §7872", "Rev. Rul. monthly AFR"],
+    requiredTables: [],
+  },
+  inputSchema: imputedInput,
+  outputSchema: imputedOutput,
+  validateInputs(raw): ValidationResult<ImputedI> {
+    const r = imputedInput.safeParse(raw);
+    return r.success
+      ? { ok: true, value: r.data }
+      : {
+          ok: false,
+          issues: r.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+        };
+  },
+  compute(input) {
+    const gap = input.afrRate - input.statedRate;
+    const annual = input.loanAmount * gap;
+    const total = annual * (input.termMonths / 12);
+    return { rateGap: gap, totalImputedInterest: total, annualImputedInterest: annual };
+  },
+  narrate(input, output) {
+    const treatment: Record<string, string> = {
+      gift: "treated as a gift from lender to borrower (Form 709 if foregone interest exceeds the annual exclusion).",
+      compensation_related:
+        "treated as additional W-2 compensation to the employee-borrower; deductible by the employer.",
+      corporation_shareholder:
+        "treated as a constructive distribution to the shareholder-borrower; not deductible by the corporation.",
+      demand: "demand-loan treatment: re-imputed each year using the blended rate.",
+    };
+    return `AFR ${(input.afrRate * 100).toFixed(3)}% − stated ${(input.statedRate * 100).toFixed(3)}% = ${(output.rateGap * 100).toFixed(3)}% gap on $${input.loanAmount.toLocaleString()} over ${input.termMonths} months → $${output.totalImputedInterest.toFixed(2)} imputed interest ($${output.annualImputedInterest.toFixed(2)}/yr); ${treatment[input.loanType] ?? ""}`;
+  },
+};
+
+// ---------------------------------------------------------------------
+// Phase 9.9 — Lease implicit rate / rate factor.
+// IRR on (-fairValue at start, +payment_k…, +residual at last period).
+// ---------------------------------------------------------------------
+
+const implicitInput = z.object({
+  fairValue: z.number().positive().finite(),
+  paymentAmount: z.number().positive().finite(),
+  numberOfPayments: z.number().int().positive(),
+  paymentsPerYear: z.number().int().positive().default(12),
+  residualValue: z.number().min(0).default(0),
+  paymentTiming: z.union([z.literal(0), z.literal(1)]).default(1),
+  leaseStartDate: z.string(),
+});
+type ImplicitI = z.infer<typeof implicitInput>;
+const implicitOutput = z.object({
+  implicitRate: z.number().nullable(),
+  rateFactor: z.number().nullable(),
+});
+type ImplicitO = z.infer<typeof implicitOutput>;
+
+const implicitCalc: TaxCalculator<ImplicitI, ImplicitO> = {
+  metadata: {
+    kind: "tvm.lease-implicit-rate",
+    name: "Lease implicit rate / rate factor",
+    description:
+      "Solve for the lease's implicit discount rate: the rate at which PV(payments) + PV(residual) = fair value of the asset. Returns null when the solver doesn't converge.",
+    taxYears: [],
+    formReferences: ["ASC 842-20-30-3", "IFRS 16.26"],
+    requiredTables: [],
+  },
+  inputSchema: implicitInput,
+  outputSchema: implicitOutput,
+  validateInputs(raw): ValidationResult<ImplicitI> {
+    const r = implicitInput.safeParse(raw);
+    return r.success
+      ? { ok: true, value: r.data }
+      : {
+          ok: false,
+          issues: r.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+        };
+  },
+  compute(input) {
+    const start = new Date(input.leaseStartDate);
+    const periodMs = (365 * 24 * 60 * 60 * 1000) / input.paymentsPerYear;
+    const flows = [{ date: start, amount: money(-input.fairValue) }];
+    for (let k = 1; k <= input.numberOfPayments; k++) {
+      const offset = input.paymentTiming === 1 ? k - 1 : k;
+      const date = new Date(start.getTime() + offset * periodMs);
+      const amount =
+        k === input.numberOfPayments
+          ? input.paymentAmount + input.residualValue
+          : input.paymentAmount;
+      flows.push({ date, amount: money(amount) });
+    }
+    const r = irr(flows, "30/360");
+    if (r === null) return { implicitRate: null, rateFactor: null };
+    return {
+      implicitRate: num(r),
+      rateFactor: input.paymentAmount / input.fairValue,
+    };
+  },
+  narrate(input, output) {
+    if (output.implicitRate === null) {
+      return `Solver did not converge for fairValue=$${input.fairValue.toLocaleString()}, payment=$${input.paymentAmount.toFixed(2)}×${input.numberOfPayments}, residual=$${input.residualValue.toFixed(2)}. Verify the inputs imply a non-degenerate cash-flow stream.`;
+    }
+    return `Lease of $${input.paymentAmount.toFixed(2)} × ${input.numberOfPayments} + residual $${input.residualValue.toFixed(2)} on a $${input.fairValue.toLocaleString()} asset has an implicit rate of ${(output.implicitRate * 100).toFixed(4)}% (rate factor ${output.rateFactor?.toFixed(6) ?? "—"}).`;
+  },
+};
+
+// ---------------------------------------------------------------------
+// Phase 9.10 — Note buy/sell yield.
+// Buyer's IRR on (-purchasePrice, +payment×N, +balloon at end).
+// ---------------------------------------------------------------------
+
+const noteYieldInput = z.object({
+  purchasePrice: z.number().positive().finite(),
+  paymentAmount: z.number().positive().finite(),
+  remainingPayments: z.number().int().positive(),
+  paymentsPerYear: z.number().int().positive().default(12),
+  balloonAmount: z.number().min(0).default(0),
+  purchaseDate: z.string(),
+  firstPaymentDate: z.string(),
+});
+type NoteYieldI = z.infer<typeof noteYieldInput>;
+const noteYieldOutput = z.object({
+  yieldToBuyer: z.number().nullable(),
+  totalReceipts: z.number(),
+  netProfit: z.number(),
+});
+type NoteYieldO = z.infer<typeof noteYieldOutput>;
+
+const noteYieldCalc: TaxCalculator<NoteYieldI, NoteYieldO> = {
+  metadata: {
+    kind: "tvm.note-yield",
+    name: "Note buy/sell yield",
+    description:
+      "Buyer's yield (IRR) on an existing note: pay purchasePrice today, receive paymentAmount × remainingPayments plus an optional balloon at the end.",
+    taxYears: [],
+    formReferences: [],
+    requiredTables: [],
+  },
+  inputSchema: noteYieldInput,
+  outputSchema: noteYieldOutput,
+  validateInputs(raw): ValidationResult<NoteYieldI> {
+    const r = noteYieldInput.safeParse(raw);
+    return r.success
+      ? { ok: true, value: r.data }
+      : {
+          ok: false,
+          issues: r.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+        };
+  },
+  compute(input) {
+    const purchase = new Date(input.purchaseDate);
+    const first = new Date(input.firstPaymentDate);
+    const periodMs = (365 * 24 * 60 * 60 * 1000) / input.paymentsPerYear;
+    const flows = [{ date: purchase, amount: money(-input.purchasePrice) }];
+    for (let k = 0; k < input.remainingPayments; k++) {
+      const date = new Date(first.getTime() + k * periodMs);
+      const amount =
+        k === input.remainingPayments - 1
+          ? input.paymentAmount + input.balloonAmount
+          : input.paymentAmount;
+      flows.push({ date, amount: money(amount) });
+    }
+    const r = irr(flows, "30/360");
+    const totalReceipts = input.paymentAmount * input.remainingPayments + input.balloonAmount;
+    return {
+      yieldToBuyer: r === null ? null : num(r),
+      totalReceipts,
+      netProfit: totalReceipts - input.purchasePrice,
+    };
+  },
+  narrate(input, output) {
+    if (output.yieldToBuyer === null) {
+      return `Solver did not converge. Check that the cash-flow stream has at least one sign change (purchase outflow vs. payment inflows).`;
+    }
+    return `Buying this note for $${input.purchasePrice.toLocaleString()} and receiving ${input.remainingPayments} payments of $${input.paymentAmount.toFixed(2)} (+ balloon $${input.balloonAmount.toFixed(2)}) yields ${(output.yieldToBuyer * 100).toFixed(4)}% to the buyer over ${(input.remainingPayments / input.paymentsPerYear).toFixed(2)} years. Net cash profit: $${output.netProfit.toFixed(2)}.`;
+  },
+};
+
+// ---------------------------------------------------------------------
 // Side-effect — register all wrappers on the shared registry.
 // Idempotent: calling twice is a no-op.
 // ---------------------------------------------------------------------
@@ -426,4 +694,8 @@ export function registerTvmCalculators(): void {
   registerCalculator(irrCalc);
   registerCalculator(mirrCalc);
   registerCalculator(sinkingCalc);
+  registerCalculator(tdrCalc);
+  registerCalculator(imputedCalc);
+  registerCalculator(implicitCalc);
+  registerCalculator(noteYieldCalc);
 }

@@ -41,6 +41,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/calculators", label: "Calculators", icon: Calculator },
   { to: "/clients", label: "Clients", icon: Users, permission: "client:read" },
   { to: "/engagements", label: "Engagements", icon: FolderOpen, permission: "engagement:read" },
+  { to: "/extract", label: "AI extract", icon: FileText, permission: "ai:use" },
   { to: "/reports", label: "Reports", icon: FileText, permission: "export:download" },
   { to: "/admin/users", label: "Users", icon: Settings, permission: "user:list" },
   { to: "/admin/api-keys", label: "API keys", icon: Settings, permission: "user:list" },
