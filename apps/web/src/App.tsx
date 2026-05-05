@@ -68,6 +68,9 @@ const ExportsPage = lazy(() => import("@/pages/Exports").then((m) => ({ default:
 const AdminBackupsPage = lazy(() =>
   import("@/pages/AdminBackups").then((m) => ({ default: m.AdminBackupsPage })),
 );
+const AdminTaxTablesPage = lazy(() =>
+  import("@/pages/AdminTaxTables").then((m) => ({ default: m.AdminTaxTablesPage })),
+);
 
 // Phase 4.7 — TanStack Query defaults per CLAUDE.md.
 const queryClient = new QueryClient({
@@ -355,6 +358,18 @@ export function App(): JSX.Element {
                       <ShelledRoute>
                         <Suspense fallback={<RouteSpinner />}>
                           <AdminBackupsPage />
+                        </Suspense>
+                      </ShelledRoute>
+                    </RequirePerm>
+                  }
+                />
+                <Route
+                  path="/admin/tax-tables"
+                  element={
+                    <RequirePerm perm="settings:read">
+                      <ShelledRoute>
+                        <Suspense fallback={<RouteSpinner />}>
+                          <AdminTaxTablesPage />
                         </Suspense>
                       </ShelledRoute>
                     </RequirePerm>

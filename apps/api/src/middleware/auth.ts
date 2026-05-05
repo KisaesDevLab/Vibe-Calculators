@@ -14,6 +14,8 @@ import { users } from "@vibe-calc/db";
 import { SESSION_COOKIE_NAME, extendSession, resolveSession } from "../lib/sessions.js";
 import { refreshSessionCookie } from "../lib/cookies.js";
 import { verifyApiKeyHeader } from "../lib/api-keys.js";
+import { checkApiKeyRateLimit } from "../lib/api-key-rate-limit.js";
+import type { KeyValueStore } from "../lib/rate-limit.js";
 import type { Env } from "../lib/env.js";
 
 /**
@@ -37,6 +39,13 @@ import type { Env } from "../lib/env.js";
 export interface AuthMiddlewareOptions {
   db: Database;
   env: Pick<Env, "VIBE_DEPLOY_MODE">;
+  /**
+   * Phase 24.6 — Redis-backed key/value store for the per-API-key
+   * rate limiter. Optional: when omitted, API-key rate limiting is
+   * disabled (used by integration tests that don't spin up Redis
+   * for the sole purpose of rate-limiting key auth).
+   */
+  apiKeyRateStore?: KeyValueStore | undefined;
 }
 
 /**
@@ -62,6 +71,26 @@ export function loadSession(opts: AuthMiddlewareOptions): RequestHandler {
           // Scope-only keys not yet supported (no scoped permission
           // resolver on req.user). Reject for now.
           return next();
+        }
+        // Phase 24.6 — per-key rate limit. Fixed 60-second window.
+        // Default 60 req/min; row.rateLimitPerMin overrides.
+        if (opts.apiKeyRateStore) {
+          const rl = await checkApiKeyRateLimit(opts.apiKeyRateStore, {
+            apiKeyId: verified.row.id,
+            limitPerMin: verified.row.rateLimitPerMin,
+          });
+          res.setHeader("X-RateLimit-Limit", String(rl.limitPerMin));
+          res.setHeader("X-RateLimit-Remaining", String(rl.remaining));
+          if (!rl.ok) {
+            res.setHeader("Retry-After", String(rl.retryAfterSec));
+            res.status(429).json({
+              type: "about:blank#rate-limited",
+              title: "Too many requests",
+              status: 429,
+              detail: `API key rate limit exceeded (${rl.limitPerMin} req/min). Retry after ${rl.retryAfterSec}s.`,
+            });
+            return;
+          }
         }
         const [actAs] = await opts.db
           .select()

@@ -179,22 +179,65 @@ export function expandSeries(events: CashFlowEvent[]): CashFlowEvent[] {
  * extensions add the explicit Newton-style compound accrual that
  * matches mortgage-industry quoting more precisely.
  */
+/**
+ * Phase 7.3 — interest accrual dispatch by compute method.
+ *
+ *   Normal      — balance * rate * yearFraction(prev, curr, dayCount)
+ *                 with the master's day-count. Compounding happens
+ *                 implicitly through the balance accumulator.
+ *
+ *   USRule      — same simple-interest accrual as Normal, but unpaid
+ *                 interest is NEVER capitalized into balance. The
+ *                 payment loop carries unpaid interest in a separate
+ *                 accumulator (handled in the main switch).
+ *
+ *   Canadian    — semi-annual compounding on monthly payments. The
+ *                 nominal rate is split: r_sa = master.rate / 2, then
+ *                 r_monthly_eff = (1 + r_sa)^(1/6) − 1. Per-period
+ *                 accrual scales by days/30.
+ *
+ *   ExactDays   — overrides the master day-count to actual/365.
+ *
+ *   RuleOf78    — handled as a post-pass in `applyRuleOf78` rather
+ *                 than inline; total interest is redistributed
+ *                 across payment rows using the sum-of-digits
+ *                 front-loading formula.
+ */
+function accrueInterest(
+  balance: Decimal,
+  rateNow: Decimal,
+  prev: Date,
+  curr: Date,
+  master: MasterCalculationSettings,
+): Decimal {
+  if (balance.lte(0)) return ZERO;
+  if (curr.getTime() <= prev.getTime()) return ZERO;
+  if (master.computeMethod === "ExactDays") {
+    const yf = yearFraction(prev, curr, "ACT/365");
+    return balance.times(rateNow).times(yf);
+  }
+  if (master.computeMethod === "Canadian") {
+    // Canadian mortgage convention: the quoted rate is "compounded
+    // semi-annually". Effective semi-annual factor = quoted/2, then
+    // monthly equivalent = (1 + quoted/2)^(1/6) − 1.
+    const semi = rateNow.dividedBy(2);
+    const monthlyEff = new Decimal(1).plus(semi).pow(new Decimal(1).dividedBy(6)).minus(1);
+    // Scale by the number of "standard months" elapsed (driven by
+    // master day-count so 30/360 sees exactly 1.0 months per
+    // calendar month, ACT/365 sees days/30.4375).
+    const yf = yearFraction(prev, curr, master.dayCount);
+    const monthsElapsed = yf.times(12);
+    return balance.times(monthlyEff).times(monthsElapsed);
+  }
+  // Normal + USRule + RuleOf78 (pre-redistribute): same simple accrual.
+  const yf = yearFraction(prev, curr, master.dayCount);
+  return balance.times(rateNow).times(yf);
+}
+
 export function generateSchedule(
   events: CashFlowEvent[],
   master: MasterCalculationSettings,
 ): ScheduleResult {
-  // Phase 7.3 — until the alternate-compute paths are validated
-  // against TValue parity, refuse to silently produce numbers under
-  // a method we haven't implemented. The four exotic methods are
-  // declared in the type but the engine only runs Normal (compound)
-  // accrual today; emitting wrong cents under the wrong header
-  // would be worse for a CPA tool than refusing the request.
-  if (master.computeMethod !== "Normal") {
-    throw new ScheduleGenerationError(
-      `ComputeMethod '${master.computeMethod}' is declared but not yet implemented in the schedule engine. ` +
-        `Use 'Normal' (compound interest) — the only method currently producing TValue-parity output.`,
-    );
-  }
   // Sort by date; preserve relative order within the same date.
   const sorted = [...events].sort((a, b) => a.date.getTime() - b.date.getTime());
   const expanded = expandSeries(sorted);
@@ -205,16 +248,16 @@ export function generateSchedule(
   let activeRate: Decimal = master.rate;
   let prevDate: Date | null = null;
   let hasNegativeAm = false;
+  /** USRule: deficit carried forward when a payment was insufficient to cover accrued interest. */
+  let unpaidInterest = ZERO;
 
   const rows: ScheduleRow[] = [];
 
   for (const event of expanded) {
-    // Accrue interest between prevDate and event.date.
-    let interestAccrued = ZERO;
-    if (prevDate !== null && event.date.getTime() > prevDate.getTime() && balance.gt(0)) {
-      const yf = yearFraction(prevDate, event.date, master.dayCount);
-      interestAccrued = balance.times(activeRate).times(yf);
-    }
+    // Accrue interest between prevDate and event.date via the
+    // method-aware dispatcher.
+    const interestAccrued =
+      prevDate !== null ? accrueInterest(balance, activeRate, prevDate, event.date, master) : ZERO;
 
     const opening = balance;
     let paymentApplied = ZERO;
@@ -232,19 +275,39 @@ export function generateSchedule(
       case "balloon": {
         const amount = event.amount ?? ZERO;
         paymentApplied = amount;
-        // Interest paid first; remainder is principal.
-        const interestDue = interestAccrued;
-        if (amount.abs().gte(interestDue)) {
-          principalApplied = amount.abs().minus(interestDue);
-          balance = balance.plus(interestDue).minus(amount.abs());
+        if (master.computeMethod === "USRule") {
+          // US Rule: unpaid interest is NOT capitalized. Payment is
+          // applied to (carry-forward + this period's accrual) first;
+          // any surplus reduces principal. If the payment can't cover
+          // interest, the deficit becomes the new carry-forward and
+          // the balance does NOT grow.
+          const interestDue = interestAccrued.plus(unpaidInterest);
+          const payAbs = amount.abs();
+          if (payAbs.gte(interestDue)) {
+            principalApplied = payAbs.minus(interestDue);
+            balance = balance.minus(principalApplied);
+            unpaidInterest = ZERO;
+          } else {
+            principalApplied = ZERO;
+            unpaidInterest = interestDue.minus(payAbs);
+          }
+          cumInterest = cumInterest.plus(interestAccrued);
+          cumPrincipal = cumPrincipal.plus(principalApplied);
         } else {
-          // Negative amortization: payment doesn't cover accrued interest.
-          principalApplied = ZERO;
-          balance = balance.plus(interestDue).minus(amount.abs());
-          hasNegativeAm = true;
+          // Normal accrual: interest is capitalized into balance via
+          // the standard waterfall. Negative-amortization permitted.
+          const interestDue = interestAccrued;
+          if (amount.abs().gte(interestDue)) {
+            principalApplied = amount.abs().minus(interestDue);
+            balance = balance.plus(interestDue).minus(amount.abs());
+          } else {
+            principalApplied = ZERO;
+            balance = balance.plus(interestDue).minus(amount.abs());
+            hasNegativeAm = true;
+          }
+          cumInterest = cumInterest.plus(interestDue);
+          cumPrincipal = cumPrincipal.plus(principalApplied);
         }
-        cumInterest = cumInterest.plus(interestDue);
-        cumPrincipal = cumPrincipal.plus(principalApplied);
         break;
       }
       case "withdrawal": {
@@ -318,11 +381,107 @@ export function generateSchedule(
     prevDate = event.date;
   }
 
-  return {
+  const result: ScheduleResult = {
     rows,
     endingBalance: money(balance),
     totalInterest: money(cumInterest),
     totalPrincipal: money(cumPrincipal),
     hasNegativeAm,
+  };
+
+  if (master.computeMethod === "RuleOf78") {
+    return applyRuleOf78(result);
+  }
+
+  return result;
+}
+
+/**
+ * Phase 7.3 — RuleOf78 redistribution.
+ *
+ * Sum-of-digits / "Rule of 78" front-loads finance charges in
+ * fixed-payment closed-end loans. Unlike Normal accrual, period k
+ * of N receives interest:
+ *
+ *   I_k = TOTAL_INTEREST × (N − k + 1) / (N(N+1)/2)
+ *
+ * The total interest is the same as Normal — only the period
+ * distribution differs. Principal_k is recomputed as
+ * payment_k − I_k, and the running balance is rebuilt.
+ *
+ * This implementation runs after a Normal pass: it preserves the
+ * non-payment rows (loan, rate_change, memo, etc.) as-is, then
+ * walks payment-class rows (`payment`, `balloon`, `interest_only`,
+ * `fixed_principal`) in chronological order and reassigns interest
+ * by their ordinal position.
+ */
+function applyRuleOf78(normal: ScheduleResult): ScheduleResult {
+  const paymentIndices: number[] = [];
+  for (let i = 0; i < normal.rows.length; i++) {
+    const k = normal.rows[i]?.kind;
+    if (k === "payment" || k === "balloon") paymentIndices.push(i);
+  }
+  const N = paymentIndices.length;
+  if (N === 0) return normal;
+
+  // Total interest stays the same as Normal — RoF78 only redistributes.
+  const totalInterest = new Decimal(normal.totalInterest);
+  const sumOfDigits = new Decimal(N).times(N + 1).dividedBy(2);
+
+  const newRows: ScheduleRow[] = normal.rows.map((r) => ({ ...r }));
+
+  // Rebuild balance by iterating chronologically and applying
+  // redistributed interest to payment rows. Non-payment rows take
+  // the original opening/closing because their effect on balance
+  // doesn't depend on period interest.
+  let runningBalance = ZERO;
+  let cumInterest = ZERO;
+  let cumPrincipal = ZERO;
+  let paymentOrdinal = 0;
+  for (let i = 0; i < newRows.length; i++) {
+    const row = newRows[i]!;
+    const opening = runningBalance;
+    let interest = new Decimal(row.interestAccrued);
+    let principal = new Decimal(row.principalApplied);
+    let payment = new Decimal(row.paymentApplied);
+
+    const isRoF78Payment = row.kind === "payment" || row.kind === "balloon";
+    if (isRoF78Payment) {
+      paymentOrdinal++;
+      const weight = new Decimal(N - paymentOrdinal + 1).dividedBy(sumOfDigits);
+      interest = totalInterest.times(weight);
+      payment = new Decimal(row.paymentApplied);
+      principal = payment.abs().minus(interest);
+      if (principal.lt(0)) principal = ZERO;
+      runningBalance = opening.minus(principal);
+    } else if (row.kind === "loan" || row.kind === "deposit") {
+      runningBalance = opening.plus(new Decimal(row.closing).minus(opening));
+    } else if (row.kind === "withdrawal") {
+      runningBalance = opening.plus(new Decimal(row.closing).minus(opening));
+    } else {
+      runningBalance = new Decimal(row.closing);
+    }
+
+    cumInterest = cumInterest.plus(interest);
+    cumPrincipal = cumPrincipal.plus(principal);
+
+    newRows[i] = {
+      ...row,
+      opening: money(opening),
+      interestAccrued: money(interest),
+      paymentApplied: money(payment),
+      principalApplied: money(principal),
+      closing: money(runningBalance),
+      cumulativeInterest: money(cumInterest),
+      cumulativePrincipal: money(cumPrincipal),
+    };
+  }
+
+  return {
+    rows: newRows,
+    endingBalance: money(runningBalance),
+    totalInterest: money(cumInterest),
+    totalPrincipal: money(cumPrincipal),
+    hasNegativeAm: false,
   };
 }

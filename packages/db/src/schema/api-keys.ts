@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, jsonb, index } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, jsonb, integer, index } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { users } from "./users";
 
@@ -36,6 +36,12 @@ export const apiKeys = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    /**
+     * Phase 24.6 — per-key rate limit override (req/min). NULL falls
+     * back to the global default. Operators can raise the ceiling on
+     * automation keys without globally relaxing throttles.
+     */
+    rateLimitPerMin: integer("rate_limit_per_min"),
   },
   (t) => ({
     prefixIdx: index("api_keys_prefix_idx").on(t.prefix),

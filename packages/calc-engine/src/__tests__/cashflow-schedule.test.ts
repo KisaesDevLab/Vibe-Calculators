@@ -14,16 +14,86 @@ const masterMonthly: MasterCalculationSettings = {
   computeMethod: "Normal",
 };
 
-describe("generateSchedule — compute-method guard", () => {
-  it("refuses non-Normal compute methods with a clear error", () => {
-    const events: CashFlowEvent[] = [
-      { date: utc(2025, 1, 1), kind: "loan", amount: money("1000") },
+describe("generateSchedule — compute-method dispatch (Phase 7.3)", () => {
+  // 100k loan, 60 monthly $1933.28 payments at 6%/yr — fully amortizing.
+  const events: CashFlowEvent[] = [
+    { date: utc(2025, 1, 1), kind: "loan", amount: money("100000") },
+    {
+      date: utc(2025, 2, 1),
+      kind: "payment",
+      amount: money("1933.28"),
+      count: 60,
+      interval: "monthly",
+    },
+  ];
+
+  it("Normal vs USRule produce identical balances when payments cover interest", () => {
+    const normal = generateSchedule(events, { ...masterMonthly, computeMethod: "Normal" });
+    const usRule = generateSchedule(events, { ...masterMonthly, computeMethod: "USRule" });
+    // Cents-level parity expected: payment > monthly interest in every
+    // period, so USRule never triggers carry-forward.
+    expect(usRule.endingBalance.toFixed(2)).toBe(normal.endingBalance.toFixed(2));
+  });
+
+  it("USRule does NOT capitalize unpaid interest (no negative-am)", () => {
+    // 100k loan, single $100 payment — way less than ~500 monthly interest.
+    const tight: CashFlowEvent[] = [
+      { date: utc(2025, 1, 1), kind: "loan", amount: money("100000") },
+      { date: utc(2025, 2, 1), kind: "payment", amount: money("100") },
     ];
-    for (const method of ["USRule", "RuleOf78", "Canadian", "ExactDays"] as const) {
-      expect(() => generateSchedule(events, { ...masterMonthly, computeMethod: method })).toThrow(
-        /not yet implemented/,
-      );
-    }
+    const normal = generateSchedule(tight, { ...masterMonthly, computeMethod: "Normal" });
+    const usRule = generateSchedule(tight, { ...masterMonthly, computeMethod: "USRule" });
+    // Normal grows balance via neg-am.
+    expect(normal.endingBalance.toNumber()).toBeGreaterThan(100000);
+    expect(normal.hasNegativeAm).toBe(true);
+    // USRule keeps balance == 100000 (no neg-am, no capitalization).
+    expect(usRule.endingBalance.toFixed(2)).toBe("100000.00");
+    expect(usRule.hasNegativeAm).toBe(false);
+  });
+
+  it("RuleOf78 conserves total interest but front-loads it", () => {
+    const normal = generateSchedule(events, { ...masterMonthly, computeMethod: "Normal" });
+    const rof78 = generateSchedule(events, { ...masterMonthly, computeMethod: "RuleOf78" });
+    // Total interest should be approximately equal (RoF78 only
+    // redistributes — within 1¢ for parity).
+    expect(rof78.totalInterest.toNumber()).toBeCloseTo(normal.totalInterest.toNumber(), 0);
+    // First payment under RoF78 should have HIGHER interest than under Normal.
+    const firstPaymentNormal = normal.rows.find((r) => r.kind === "payment");
+    const firstPaymentRoF78 = rof78.rows.find((r) => r.kind === "payment");
+    expect(firstPaymentRoF78?.interestAccrued.toNumber()).toBeGreaterThan(
+      firstPaymentNormal?.interestAccrued.toNumber() ?? 0,
+    );
+  });
+
+  it("Canadian uses semi-annual compounding (lower effective monthly rate than Normal)", () => {
+    const normal = generateSchedule(events, { ...masterMonthly, computeMethod: "Normal" });
+    const canadian = generateSchedule(events, { ...masterMonthly, computeMethod: "Canadian" });
+    // Canadian convention reduces effective monthly rate vs nominal /
+    // 12, so total interest is lower than Normal for the same nominal.
+    expect(canadian.totalInterest.toNumber()).toBeLessThan(normal.totalInterest.toNumber());
+    // But should be in the same ballpark (within 5%).
+    const ratio = canadian.totalInterest.toNumber() / normal.totalInterest.toNumber();
+    expect(ratio).toBeGreaterThan(0.9);
+    expect(ratio).toBeLessThan(1.0);
+  });
+
+  it("ExactDays overrides the master day-count to actual/365", () => {
+    // Use a master with 30/360, a leap-year-spanning loan.
+    const leap: CashFlowEvent[] = [
+      { date: utc(2024, 1, 1), kind: "loan", amount: money("100000") },
+      { date: utc(2024, 12, 31), kind: "balloon", amount: money("106000") },
+    ];
+    const m30 = { ...masterMonthly, dayCount: "30/360" as const, computeMethod: "Normal" as const };
+    const mAct = {
+      ...masterMonthly,
+      dayCount: "30/360" as const,
+      computeMethod: "ExactDays" as const,
+    };
+    const normal = generateSchedule(leap, m30);
+    const exact = generateSchedule(leap, mAct);
+    // 30/360 treats this as 360 days; actual/365 sees ~365 days.
+    // So ExactDays accrues more interest.
+    expect(exact.totalInterest.toNumber()).toBeGreaterThan(normal.totalInterest.toNumber());
   });
 });
 

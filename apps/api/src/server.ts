@@ -31,6 +31,10 @@ import { buildBulkExportRouter, type BulkExportRouteDeps } from "./routes/bulk-e
 import { buildExportsRouter, type ExportRouteDeps } from "./routes/exports.js";
 import { buildAdminBackupsRouter, type AdminBackupsRouteDeps } from "./routes/admin-backups.js";
 import {
+  buildAdminTaxTablesRouter,
+  type AdminTaxTablesRouteDeps,
+} from "./routes/admin-tax-tables.js";
+import {
   buildAdminAiPromptsRouter,
   type AdminAiPromptsRouteDeps,
 } from "./routes/admin-ai-prompts.js";
@@ -66,7 +70,8 @@ export interface ServerOptions {
       FirmSettingsRouteDeps &
       BulkExportRouteDeps &
       ExportRouteDeps &
-      AdminBackupsRouteDeps;
+      AdminBackupsRouteDeps &
+      AdminTaxTablesRouteDeps;
   };
 }
 
@@ -140,6 +145,7 @@ export function createApp(options: ServerOptions = {}): Express {
       }),
     );
     app.use("/api/v1/admin/backups", buildAdminBackupsRouter(options.auth.routes));
+    app.use("/api/v1/admin/tax-tables", buildAdminTaxTablesRouter(options.auth.routes));
   }
 
   // Final RFC 7807 error handler — never leak stack traces or

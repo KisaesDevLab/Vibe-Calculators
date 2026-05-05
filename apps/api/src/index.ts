@@ -21,6 +21,8 @@ const { loadFirmSettings } = await import("./lib/firm-settings.js");
 type EmailProviderType = Awaited<ReturnType<typeof createEmailProviderFromEnv>>;
 const { runDeepHealth } = await import("./lib/deep-health.js");
 const { startExportWorker, stopExportWorker } = await import("./lib/export-queue.js");
+const { startWebhookWorker, stopWebhookWorker } = await import("./lib/webhook-queue.js");
+const { startSchedulerWorker, stopSchedulerWorker } = await import("./lib/scheduler-queue.js");
 
 // Side-effect imports: importing @vibe-calc/tax-engine triggers each
 // calculator module's registerCalculator() call, populating the global
@@ -211,7 +213,7 @@ const emitMagicLinkEmail = async (input: {
 // Number of migration tags shipped with this release; bumped each
 // time a new file lands in packages/db/drizzle/. The deep-health
 // schema-version probe asserts the applied count matches.
-const EXPECTED_MIGRATIONS = 18; // 0000..0017
+const EXPECTED_MIGRATIONS = 19; // 0000..0018
 
 const app = createApp({
   health: {
@@ -227,7 +229,11 @@ const app = createApp({
       }),
   },
   auth: {
-    middleware: { db, env: { VIBE_DEPLOY_MODE: env.VIBE_DEPLOY_MODE } },
+    middleware: {
+      db,
+      env: { VIBE_DEPLOY_MODE: env.VIBE_DEPLOY_MODE },
+      apiKeyRateStore: redisStore(rateLimitRedis),
+    },
     routes: {
       db,
       env: { VIBE_DEPLOY_MODE: env.VIBE_DEPLOY_MODE },
@@ -237,7 +243,12 @@ const app = createApp({
       emitMagicLinkEmail,
       llmProvider,
       ...(emailProvider ? { emailProvider } : {}),
-      exportQueue: { db, redis: { url: env.REDIS_URL } },
+      exportQueue: {
+        db,
+        redis: { url: env.REDIS_URL },
+        webhookQueue: { db, redis: { url: env.REDIS_URL } },
+      },
+      webhookQueue: { db, redis: { url: env.REDIS_URL } },
     },
   },
 });
@@ -245,8 +256,24 @@ const app = createApp({
 // Phase 13.7 — start the in-process export worker. BullMQ uses its
 // own Redis connection (separate from the rate-limiter's) so a long-
 // running PDF render can't starve auth throttling.
-startExportWorker({ db, redis: { url: env.REDIS_URL } });
+startExportWorker({
+  db,
+  redis: { url: env.REDIS_URL },
+  webhookQueue: { db, redis: { url: env.REDIS_URL } },
+});
 logger.info("export worker started");
+
+// Phase 24.5 — start the webhook retry worker.
+startWebhookWorker({ db, redis: { url: env.REDIS_URL } });
+logger.info("webhook worker started");
+
+// Phase 22.1 — start the repeatable scheduler tick (default every 5 min).
+await startSchedulerWorker({
+  db,
+  redis: { url: env.REDIS_URL },
+  ...(emailProvider ? { emailProvider } : {}),
+});
+logger.info("scheduler worker started");
 
 const server = app.listen(env.PORT, () => {
   logger.info(
@@ -260,6 +287,8 @@ async function shutdown(signal: string): Promise<void> {
   server.close(() => undefined);
   await Promise.allSettled([
     stopExportWorker(),
+    stopWebhookWorker(),
+    stopSchedulerWorker(),
     pool.end(),
     rateLimitRedis.quit().catch(() => undefined),
     closeDatabase(),

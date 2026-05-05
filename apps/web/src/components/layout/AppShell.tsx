@@ -62,6 +62,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/admin/ai", label: "AI provider", icon: Settings, permission: "ai:configure" },
   { to: "/admin/ai-prompts", label: "AI prompts", icon: Settings, permission: "ai:configure" },
   { to: "/admin/backups", label: "Backups", icon: Settings, permission: "backup:create" },
+  { to: "/admin/tax-tables", label: "Tax tables", icon: Settings, permission: "settings:read" },
 ];
 
 export function AppShell({ children }: { children: ReactNode }): JSX.Element {
@@ -69,6 +70,11 @@ export function AppShell({ children }: { children: ReactNode }): JSX.Element {
   const openCommandPalette = useUiStore((s) => s.openCommandPalette);
   const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
+
+  // Phase 4.1 — load firm branding so the topbar shows the firm's
+  // logo + brand color. Public endpoint, accessible to any
+  // authenticated user; admin EIN/address etc. are NOT exposed here.
+  const branding = useFirmBranding();
 
   const visible = NAV_ITEMS.filter((i) => !i.permission || hasPermission(i.permission as never));
 
@@ -80,9 +86,23 @@ export function AppShell({ children }: { children: ReactNode }): JSX.Element {
           sidebarCollapsed ? "w-14" : "w-56",
         )}
       >
-        <div className="flex h-14 items-center justify-between border-b border-border px-3">
+        <div
+          className="flex h-14 items-center justify-between border-b px-3"
+          style={branding?.brandColor ? { borderBottomColor: branding.brandColor } : {}}
+        >
           {!sidebarCollapsed && (
-            <span className="text-sm font-semibold tracking-tight">Vibe Calculators</span>
+            <div className="flex items-center gap-2 overflow-hidden">
+              {branding?.logoDataUrl && (
+                <img
+                  src={branding.logoDataUrl}
+                  alt=""
+                  className="h-7 w-7 shrink-0 rounded object-contain"
+                />
+              )}
+              <span className="truncate text-sm font-semibold tracking-tight">
+                {branding?.firmName || "Vibe Calculators"}
+              </span>
+            </div>
           )}
           <Button
             variant="ghost"
@@ -137,6 +157,35 @@ export function AppShell({ children }: { children: ReactNode }): JSX.Element {
       </div>
     </div>
   );
+}
+
+interface FirmBranding {
+  firmName: string | null;
+  brandColor: string | null;
+  logoDataUrl: string | null;
+}
+
+function useFirmBranding(): FirmBranding | null {
+  const [data, setData] = useState<FirmBranding | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/v1/admin/firm-settings/public", {
+          credentials: "include",
+        });
+        if (!res.ok) return;
+        const j = (await res.json()) as { branding: FirmBranding };
+        if (!cancelled) setData(j.branding);
+      } catch {
+        // Best-effort — keep the default text fallback on error.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return data;
 }
 
 function ThemeToggle(): JSX.Element {

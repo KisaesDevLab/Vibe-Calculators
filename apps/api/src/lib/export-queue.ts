@@ -29,6 +29,7 @@ import { inArray } from "drizzle-orm";
 import JSZip from "jszip";
 import { logger } from "./logger.js";
 import { loadFirmSettings, composeBrandedFooter } from "./firm-settings.js";
+import { fireWebhookEvent, type WebhookQueueDeps } from "./webhook-queue.js";
 
 /**
  * Phase 13.7 — async export queue.
@@ -63,6 +64,8 @@ const MAX_BULK = 50;
 export interface ExportQueueDeps {
   db: Database;
   redis: ConnectionOptions;
+  /** Optional webhook queue — fires export.completed when present. */
+  webhookQueue?: WebhookQueueDeps | undefined;
 }
 
 export interface ExportJobPayload {
@@ -250,6 +253,13 @@ async function processExportJob(deps: ExportQueueDeps, exportJobId: string): Pro
       const zip = new JSZip();
       const errors: string[] = [];
       let written = 0;
+      const opts = job.options ?? {};
+      const watermark =
+        typeof opts.watermark === "string" && opts.watermark.length > 0
+          ? opts.watermark
+          : opts.draft === true
+            ? "DRAFT — Not for Distribution"
+            : undefined;
       for (const calc of rows) {
         try {
           const buf = await renderSingleCalc(
@@ -258,6 +268,7 @@ async function processExportJob(deps: ExportQueueDeps, exportJobId: string): Pro
             calc.inputsJson,
             calc.outputsJson,
             branding,
+            watermark,
           );
           const safe = calc.name.replace(/[^a-z0-9_.-]/gi, "_").slice(0, 80);
           zip.file(`${safe}-${calc.id.slice(0, 8)}.pdf`, buf);
@@ -319,6 +330,20 @@ async function processExportJob(deps: ExportQueueDeps, exportJobId: string): Pro
         errorMessage: null,
       })
       .where(eq(exportJobs.id, exportJobId));
+    if (deps.webhookQueue) {
+      await fireWebhookEvent(deps.webhookQueue, {
+        action: "export.completed",
+        entityKind: "calculation",
+        entityId: job.calculationId ?? job.id,
+        payload: {
+          exportJobId,
+          kind: job.kind,
+          filename,
+          sizeBytes: buffer.length,
+          requestedBy: userId,
+        },
+      });
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await deps.db
@@ -346,10 +371,20 @@ async function renderForKind(
   const inp = (inputs ?? {}) as Record<string, unknown>;
   const out = (outputs ?? {}) as Record<string, unknown>;
 
+  // Phase 13.10 — opt-in watermark. Empty / undefined emits no
+  // watermark; a string is overlaid on the PDF (engine already
+  // supports the `watermark` field on both renderer paths).
+  const watermark =
+    typeof options.watermark === "string" && options.watermark.length > 0
+      ? options.watermark
+      : options.draft === true
+        ? "DRAFT — Not for Distribution"
+        : undefined;
+
   switch (exportKind) {
     case "tvm-pdf":
     case "memo-pdf":
-      return renderSingleCalc(calcKind, name, inp, out, branding);
+      return renderSingleCalc(calcKind, name, inp, out, branding, watermark);
     case "xlsx": {
       const schedule = scheduleFromInputs(inp);
       const buf = await scheduleToXlsx(schedule, {
@@ -382,6 +417,7 @@ async function renderSingleCalc(
   inputs: unknown,
   outputs: unknown,
   branding: { firmName?: string; firmFooter?: string },
+  watermark?: string,
 ): Promise<Buffer> {
   const inp = (inputs ?? {}) as Record<string, unknown>;
   const out = (outputs ?? {}) as Record<string, unknown>;
@@ -392,6 +428,7 @@ async function renderSingleCalc(
       preparedBy: "(queued export)",
       preparedOn: new Date(),
       ...branding,
+      ...(watermark ? { watermark } : {}),
     });
   }
   return calculatorMemoToPdf({
@@ -404,6 +441,7 @@ async function renderSingleCalc(
     preparedBy: "(queued export)",
     preparedOn: new Date(),
     ...branding,
+    ...(watermark ? { watermark } : {}),
   });
 }
 

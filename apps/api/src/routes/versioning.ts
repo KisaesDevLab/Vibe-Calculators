@@ -10,6 +10,7 @@ import {
 } from "@vibe-calc/db";
 import { problem, requirePermission } from "../middleware/auth.js";
 import { recordAuditEvent } from "../lib/audit-events.js";
+import { fireWebhookEvent, type WebhookQueueDeps } from "../lib/webhook-queue.js";
 import { userOwnsCalculation } from "../lib/ownership.js";
 
 /**
@@ -29,6 +30,8 @@ import { userOwnsCalculation } from "../lib/ownership.js";
 
 export interface VersioningRouteDeps {
   db: Database;
+  /** Optional webhook queue — fires calc.* events when present. */
+  webhookQueue?: WebhookQueueDeps | undefined;
 }
 
 const saveSchema = z.object({
@@ -373,6 +376,14 @@ export function buildVersioningRouter(deps: VersioningRouteDeps): Router {
         actorUserId: req.user.id,
         payload: { versionId: calc.currentVersionId },
       });
+      if (deps.webhookQueue) {
+        await fireWebhookEvent(deps.webhookQueue, {
+          action: "calculation.approve",
+          entityKind: "calculation",
+          entityId: id,
+          payload: { versionId: calc.currentVersionId, approverId: req.user.id },
+        });
+      }
       res.json({ calculation: updated });
     },
   );

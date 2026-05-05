@@ -4,6 +4,7 @@ import { z } from "zod";
 import { calculations, type Database } from "@vibe-calc/db";
 import { problem, requirePermission } from "../middleware/auth.js";
 import { permittedCalculationIds, userOwnsCalculation } from "../lib/ownership.js";
+import { fireWebhookEvent, type WebhookQueueDeps } from "../lib/webhook-queue.js";
 
 /**
  * Phase 20 — calculations CRUD lite.
@@ -20,6 +21,8 @@ import { permittedCalculationIds, userOwnsCalculation } from "../lib/ownership.j
 
 export interface CalculationRouteDeps {
   db: Database;
+  /** Optional webhook queue — fires calculation.create when present. */
+  webhookQueue?: WebhookQueueDeps | undefined;
 }
 
 const kindEnum = z.enum([
@@ -126,6 +129,20 @@ export function buildCalculationsRouter(deps: CalculationRouteDeps): Router {
       })
       .returning();
     if (!row) return problem(res, 500, "Internal error", "Insert returned no row");
+    if (deps.webhookQueue) {
+      await fireWebhookEvent(deps.webhookQueue, {
+        action: "calculation.create",
+        entityKind: "calculation",
+        entityId: row.id,
+        payload: {
+          name: row.name,
+          kind: row.kind,
+          clientId: row.clientId,
+          engagementId: row.engagementId,
+          createdBy: userId,
+        },
+      });
+    }
     res.status(201).json({ calculation: serialize(row) });
   });
 

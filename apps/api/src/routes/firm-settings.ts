@@ -132,6 +132,32 @@ export function buildFirmSettingsRouter(deps: FirmSettingsRouteDeps): Router {
     res.json({ firmSettings: row });
   });
 
+  /**
+   * Phase 4.1 — non-admin readable branding subset. Anyone with an
+   * authenticated session can fetch the firm name / brand color /
+   * logo so the AppShell topbar shows the firm identity without
+   * leaking EIN, address, phone, footer to unprivileged users.
+   */
+  router.get("/public", async (req: Request, res: Response) => {
+    if (!req.user) return problem(res, 401, "Unauthorized", "Authentication required");
+    const [row] = await deps.db
+      .select()
+      .from(firmSettings)
+      .where(eq(firmSettings.id, FIRM_SETTINGS_ID))
+      .limit(1);
+    if (!row) {
+      res.json({ branding: { firmName: null, brandColor: null, logoDataUrl: null } });
+      return;
+    }
+    res.json({
+      branding: {
+        firmName: row.firmName ?? null,
+        brandColor: row.brandColor ?? null,
+        logoDataUrl: row.logoDataUrl ?? null,
+      },
+    });
+  });
+
   router.put("/", requirePermission("user:invite"), async (req: Request, res: Response) => {
     if (!req.user) return problem(res, 401, "Unauthorized", "Authentication required");
     const parsed = updateSchema.safeParse(req.body);

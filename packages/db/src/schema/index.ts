@@ -18,4 +18,5 @@ export * from "./api-keys";
 export * from "./firm-settings";
 export * from "./ai-prompts";
 export * from "./export-jobs";
+export * from "./webhook-deliveries";
 export * from "./relations";
