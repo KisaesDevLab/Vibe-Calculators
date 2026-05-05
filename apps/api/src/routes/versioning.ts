@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { and, asc, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
+  auditEvents,
   calculations,
   calculationVersions,
   calculationComments,
@@ -9,6 +10,7 @@ import {
 } from "@vibe-calc/db";
 import { problem, requirePermission } from "../middleware/auth.js";
 import { recordAuditEvent } from "../lib/audit-events.js";
+import { userOwnsCalculation } from "../lib/ownership.js";
 
 /**
  * Phase 21 — versioning + reviewer/preparer workflow.
@@ -53,6 +55,22 @@ const rejectSchema = z.object({
 
 export function buildVersioningRouter(deps: VersioningRouteDeps): Router {
   const router = Router({ mergeParams: true });
+
+  // IDOR guard for every sub-endpoint of /api/v1/calculations/:id.
+  // A preparer/reviewer who isn't assigned to the calc's parent
+  // engagement (and didn't author the calc) gets a 404 — the same
+  // shape as "calc doesn't exist", to avoid leaking existence.
+  router.use(async (req, res, next) => {
+    if (!req.user) return problem(res, 401, "Unauthorized", "Authentication required");
+    const id = readId(req);
+    if (!id) return problem(res, 400, "Bad request", "Missing id");
+    const ok = await userOwnsCalculation(
+      { db: deps.db, userId: req.user.id, role: req.user.role },
+      id,
+    );
+    if (!ok) return problem(res, 404, "Not found", "Calculation not found");
+    next();
+  });
 
   // Save = create new immutable version + bump pointer.
   router.post(
@@ -299,6 +317,34 @@ export function buildVersioningRouter(deps: VersioningRouteDeps): Router {
       if (!calc) return problem(res, 404, "Not found", "Calculation not found");
       if (calc.status !== "ready_for_review") {
         return problem(res, 409, "Conflict", "Calculation is not awaiting review");
+      }
+
+      // Separation-of-duty: the same user cannot both submit and
+      // approve. Look up the actor of the most recent
+      // calculation.submit_for_review event for this calc; reject
+      // when actor === req.user.id (admin role overrides — admins
+      // routinely self-approve during firm setup / migrations).
+      if (req.user.role !== "admin") {
+        const [submission] = await deps.db
+          .select({ actorUserId: auditEvents.actorUserId })
+          .from(auditEvents)
+          .where(
+            and(
+              eq(auditEvents.entityKind, "calculation"),
+              eq(auditEvents.entityId, id),
+              eq(auditEvents.action, "calculation.submit_for_review"),
+            ),
+          )
+          .orderBy(desc(auditEvents.createdAt))
+          .limit(1);
+        if (submission && submission.actorUserId === req.user.id) {
+          return problem(
+            res,
+            409,
+            "Conflict",
+            "You submitted this calculation for review. A different reviewer must approve.",
+          );
+        }
       }
 
       const userId = req.user.id;

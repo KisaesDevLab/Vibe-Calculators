@@ -338,4 +338,37 @@ describe("auth flows — integration", () => {
       .where(eq(sessions.userId, target.id));
     expect(remainingSessions.every((s) => s.revokedAt !== null)).toBe(true);
   });
+
+  it("magic-link consume requires 2FA when target user has TOTP enabled", async () => {
+    // Seed a user with TOTP already enabled. The actual TOTP secret
+    // doesn't need to be valid — we're testing that the consume path
+    // rejects without ANY second factor.
+    const target = await seedUser(h.db, {
+      email: "twofactor@firm.test",
+      name: "TwoFactor",
+      role: "preparer",
+      password: "Correct-horse-battery-staple-2026!",
+    });
+    await h.db
+      .update(users)
+      .set({ totpEnabled: true, totpSecret: "v1:placeholder:placeholder:placeholder" })
+      .where(eq(users.id, target.id));
+
+    // Issue a magic link.
+    await request(h.app).post("/api/v1/auth/magic-link").send({ email: target.email });
+    const link = h.capturedMagicLinks.find((m) => m.email === target.email);
+    expect(link).toBeTruthy();
+    const token = link!.token;
+
+    // Consume WITHOUT a TOTP code → must reject with 401.
+    const noTotp = await request(h.app).post("/api/v1/auth/magic-link/consume").send({ token });
+    expect(noTotp.status).toBe(401);
+    expect(noTotp.body.title).toBe("TOTP required");
+
+    // Consume WITH a wrong recovery code → also reject (no row matches).
+    const wrong = await request(h.app)
+      .post("/api/v1/auth/magic-link/consume")
+      .send({ token, recoveryCode: "WRONG-CODE" });
+    expect(wrong.status).toBe(401);
+  });
 });

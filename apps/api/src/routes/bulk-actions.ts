@@ -2,7 +2,8 @@ import { Router, type Request, type Response } from "express";
 import { and, inArray, isNull, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { calculations, engagements, type Database } from "@vibe-calc/db";
-import { problem, requirePermission } from "../middleware/auth.js";
+import { problem, requirePermission, requireRole } from "../middleware/auth.js";
+import { permittedCalculationIds, permittedEngagementIds } from "../lib/ownership.js";
 
 /**
  * Phase 20.7 — bulk actions.
@@ -42,13 +43,23 @@ export function buildBulkRouter(deps: BulkRouteDeps): Router {
     "/calculations/archive",
     requirePermission("calculation:archive"),
     async (req: Request, res: Response) => {
+      if (!req.user) return problem(res, 401, "Unauthorized", "Authentication required");
       const parsed = idsSchema.safeParse(req.body);
       if (!parsed.success) return problem(res, 400, "Bad request", "Invalid body");
-      const updated = await deps.db
-        .update(calculations)
-        .set({ archivedAt: new Date(), updatedAt: new Date() })
-        .where(and(inArray(calculations.id, parsed.data.ids), isNull(calculations.archivedAt)))
-        .returning({ id: calculations.id });
+      // IDOR-scoped: only the caller's permitted ids actually flip;
+      // attempts to archive another user's calcs are silently dropped.
+      const permitted = await permittedCalculationIds(
+        { db: deps.db, userId: req.user.id, role: req.user.role },
+        parsed.data.ids,
+      );
+      const updated =
+        permitted.length === 0
+          ? []
+          : await deps.db
+              .update(calculations)
+              .set({ archivedAt: new Date(), updatedAt: new Date() })
+              .where(and(inArray(calculations.id, permitted), isNull(calculations.archivedAt)))
+              .returning({ id: calculations.id });
       res.json({ updatedIds: updated.map((r) => r.id), requested: parsed.data.ids.length });
     },
   );
@@ -57,13 +68,21 @@ export function buildBulkRouter(deps: BulkRouteDeps): Router {
     "/calculations/restore",
     requirePermission("calculation:archive"),
     async (req: Request, res: Response) => {
+      if (!req.user) return problem(res, 401, "Unauthorized", "Authentication required");
       const parsed = idsSchema.safeParse(req.body);
       if (!parsed.success) return problem(res, 400, "Bad request", "Invalid body");
-      const updated = await deps.db
-        .update(calculations)
-        .set({ archivedAt: null, updatedAt: new Date() })
-        .where(and(inArray(calculations.id, parsed.data.ids), isNotNull(calculations.archivedAt)))
-        .returning({ id: calculations.id });
+      const permitted = await permittedCalculationIds(
+        { db: deps.db, userId: req.user.id, role: req.user.role },
+        parsed.data.ids,
+      );
+      const updated =
+        permitted.length === 0
+          ? []
+          : await deps.db
+              .update(calculations)
+              .set({ archivedAt: null, updatedAt: new Date() })
+              .where(and(inArray(calculations.id, permitted), isNotNull(calculations.archivedAt)))
+              .returning({ id: calculations.id });
       res.json({ updatedIds: updated.map((r) => r.id), requested: parsed.data.ids.length });
     },
   );
@@ -72,32 +91,51 @@ export function buildBulkRouter(deps: BulkRouteDeps): Router {
     "/calculations/change-tax-year",
     requirePermission("engagement:update"),
     async (req: Request, res: Response) => {
+      if (!req.user) return problem(res, 401, "Unauthorized", "Authentication required");
       const parsed = changeTaxYearSchema.safeParse(req.body);
       if (!parsed.success) return problem(res, 400, "Bad request", "Invalid body");
+      const permitted = await permittedCalculationIds(
+        { db: deps.db, userId: req.user.id, role: req.user.role },
+        parsed.data.ids,
+      );
       // Calculations don't carry tax_year directly; the change cascades through the engagement.
-      const calcs = await deps.db
-        .select({ engagementId: calculations.engagementId })
-        .from(calculations)
-        .where(inArray(calculations.id, parsed.data.ids));
+      const calcs =
+        permitted.length === 0
+          ? []
+          : await deps.db
+              .select({ engagementId: calculations.engagementId })
+              .from(calculations)
+              .where(inArray(calculations.id, permitted));
       const engagementIds = [
         ...new Set(calcs.map((c) => c.engagementId).filter((x): x is string => Boolean(x))),
       ];
       if (engagementIds.length === 0) {
         return res.json({ updatedEngagements: 0, taxYear: parsed.data.taxYear });
       }
-      const updated = await deps.db
-        .update(engagements)
-        .set({ taxYear: parsed.data.taxYear, updatedAt: new Date() })
-        .where(inArray(engagements.id, engagementIds))
-        .returning({ id: engagements.id });
+      const permittedEngagements = await permittedEngagementIds(
+        { db: deps.db, userId: req.user.id, role: req.user.role },
+        engagementIds,
+      );
+      const updated =
+        permittedEngagements.length === 0
+          ? []
+          : await deps.db
+              .update(engagements)
+              .set({ taxYear: parsed.data.taxYear, updatedAt: new Date() })
+              .where(inArray(engagements.id, permittedEngagements))
+              .returning({ id: engagements.id });
       res.json({ updatedEngagements: updated.length, taxYear: parsed.data.taxYear });
     },
   );
 
+  // Reassigning engagements is a privilege-altering operation: it
+  // grants the new preparer/reviewer access to client data they may
+  // not have had before. Restrict to admins.
   router.post(
     "/engagements/reassign",
-    requirePermission("engagement:assign"),
+    requireRole("admin"),
     async (req: Request, res: Response) => {
+      if (!req.user) return problem(res, 401, "Unauthorized", "Authentication required");
       const parsed = reassignSchema.safeParse(req.body);
       if (!parsed.success) return problem(res, 400, "Bad request", "Invalid body");
       const patch: Record<string, unknown> = { updatedAt: new Date() };

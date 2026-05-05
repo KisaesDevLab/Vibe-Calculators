@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { apiKeys, type Database } from "@vibe-calc/db";
+import { roleAtLeast } from "@vibe-calc/shared-types";
 import { problem, requirePermission } from "../middleware/auth.js";
 import { generateToken } from "../lib/api-keys.js";
 import { recordAuditEvent } from "../lib/audit-events.js";
@@ -62,7 +63,9 @@ export function buildApiKeysRouter(deps: ApiKeysRouteDeps): Router {
     // admin issuers (e.g. reviewer extending integrations on their
     // own account), the only safe default is self.
     const targetUserId = parsed.data.actAsUserId ?? req.user.id;
-    if (targetUserId !== req.user.id && req.user.role !== "admin") {
+    // Use the canonical role-tier helper instead of an inline string
+    // comparison (CLAUDE.md "permissions go through middleware" rule).
+    if (targetUserId !== req.user.id && !roleAtLeast(req.user.role, "admin")) {
       return problem(res, 403, "Forbidden", "Only admin may issue API keys acting as another user");
     }
 

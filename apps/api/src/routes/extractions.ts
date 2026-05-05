@@ -5,6 +5,7 @@ import { extractionJobs, type Database } from "@vibe-calc/db";
 import { extractLoanAgreement, flagLowConfidenceFields, type LlmProvider } from "@vibe-calc/llm";
 import { problem, requirePermission } from "../middleware/auth.js";
 import { recordAuditEvent } from "../lib/audit-events.js";
+import { userOwnsExtraction } from "../lib/ownership.js";
 
 /**
  * Phase 23 — extraction routes.
@@ -80,8 +81,14 @@ export function buildExtractionsRouter(deps: ExtractionRouteDeps): Router {
   });
 
   router.get("/:id", requirePermission("ai:use"), async (req: Request, res: Response) => {
+    if (!req.user) return problem(res, 401, "Unauthorized", "Authentication required");
     const id = readId(req);
     if (!id) return problem(res, 400, "Bad request", "Missing id");
+    if (
+      !(await userOwnsExtraction({ db: deps.db, userId: req.user.id, role: req.user.role }, id))
+    ) {
+      return problem(res, 404, "Not found", "Extraction not found");
+    }
     const [row] = await deps.db
       .select()
       .from(extractionJobs)
@@ -98,6 +105,11 @@ export function buildExtractionsRouter(deps: ExtractionRouteDeps): Router {
     if (!req.user) return problem(res, 401, "Unauthorized", "Authentication required");
     const id = readId(req);
     if (!id) return problem(res, 400, "Bad request", "Missing id");
+    if (
+      !(await userOwnsExtraction({ db: deps.db, userId: req.user.id, role: req.user.role }, id))
+    ) {
+      return problem(res, 404, "Not found", "Extraction not found");
+    }
     if (!deps.llmProvider) {
       return problem(res, 503, "Service unavailable", "No LLM provider configured");
     }
@@ -187,6 +199,27 @@ export function buildExtractionsRouter(deps: ExtractionRouteDeps): Router {
     if (!req.user) return problem(res, 401, "Unauthorized", "Authentication required");
     const id = readId(req);
     if (!id) return problem(res, 400, "Bad request", "Missing id");
+    if (
+      !(await userOwnsExtraction({ db: deps.db, userId: req.user.id, role: req.user.role }, id))
+    ) {
+      return problem(res, 404, "Not found", "Extraction not found");
+    }
+    // Separation-of-duty: a user cannot approve an extraction they
+    // themselves created. Admin override allowed (admin runs and
+    // approves their own work routinely during firm setup).
+    const [job] = await deps.db
+      .select({ createdBy: extractionJobs.createdBy })
+      .from(extractionJobs)
+      .where(eq(extractionJobs.id, id))
+      .limit(1);
+    if (job && job.createdBy === req.user.id && req.user.role !== "admin") {
+      return problem(
+        res,
+        409,
+        "Conflict",
+        "You cannot approve an extraction you created. A different reviewer must approve.",
+      );
+    }
     const [updated] = await deps.db
       .update(extractionJobs)
       .set({

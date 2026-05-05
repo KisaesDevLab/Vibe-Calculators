@@ -163,10 +163,23 @@ describe("versioning + audit chain — integration", () => {
       .post("/api/v1/clients")
       .set("Cookie", aC)
       .send({ name: "Y", entityType: "individual" });
-    const calc = await request(h.app)
-      .post("/api/v1/calculations")
+    // Create engagement and assign preparer + reviewer so the IDOR
+    // ownership scoping (lib/ownership.ts) lets them act on the calc.
+    const eng = await request(h.app)
+      .post("/api/v1/engagements")
       .set("Cookie", aC)
-      .send({ name: "Q", kind: "tvm.amortization", clientId: cl.body.client.id, inputs: {} });
+      .send({ clientId: cl.body.client.id, name: "FY-test" });
+    await request(h.app)
+      .post(`/api/v1/engagements/${eng.body.engagement.id}/assign`)
+      .set("Cookie", aC)
+      .send({ preparerId: preparer.id, reviewerId: reviewer.id });
+    const calc = await request(h.app).post("/api/v1/calculations").set("Cookie", aC).send({
+      name: "Q",
+      kind: "tvm.amortization",
+      clientId: cl.body.client.id,
+      engagementId: eng.body.engagement.id,
+      inputs: {},
+    });
     const id = calc.body.calculation.id as string;
     await request(h.app)
       .post(`/api/v1/calculations/${id}/save`)
@@ -217,10 +230,21 @@ describe("versioning + audit chain — integration", () => {
       .post("/api/v1/clients")
       .set("Cookie", aC)
       .send({ name: "K", entityType: "individual" });
-    const calc = await request(h.app)
-      .post("/api/v1/calculations")
+    const eng = await request(h.app)
+      .post("/api/v1/engagements")
       .set("Cookie", aC)
-      .send({ name: "Calc", kind: "tvm.amortization", clientId: cl.body.client.id, inputs: {} });
+      .send({ clientId: cl.body.client.id, name: "FY-test" });
+    await request(h.app)
+      .post(`/api/v1/engagements/${eng.body.engagement.id}/assign`)
+      .set("Cookie", aC)
+      .send({ reviewerId: reviewer.id });
+    const calc = await request(h.app).post("/api/v1/calculations").set("Cookie", aC).send({
+      name: "Calc",
+      kind: "tvm.amortization",
+      clientId: cl.body.client.id,
+      engagementId: eng.body.engagement.id,
+      inputs: {},
+    });
     const id = calc.body.calculation.id as string;
     await request(h.app)
       .post(`/api/v1/calculations/${id}/save`)
@@ -240,6 +264,58 @@ describe("versioning + audit chain — integration", () => {
       .set("Cookie", aC);
     expect(comments.body.comments).toHaveLength(1);
     expect(comments.body.comments[0].body).toContain("tax-year basis");
+  });
+
+  it("IDOR: an unrelated preparer is rejected with 404 when accessing a calc not in their scope", async () => {
+    const admin = await seedUser(h.db, { email: "a@firm.test", name: "A", role: "admin" });
+    const stranger = await seedUser(h.db, {
+      email: "stranger@firm.test",
+      name: "Stranger",
+      role: "preparer",
+    });
+    const aC = await cookie(h.db, admin.id);
+    const sC = await cookie(h.db, stranger.id);
+
+    const cl = await request(h.app)
+      .post("/api/v1/clients")
+      .set("Cookie", aC)
+      .send({ name: "Confidential Co", entityType: "c_corp" });
+    const calc = await request(h.app).post("/api/v1/calculations").set("Cookie", aC).send({
+      name: "Sensitive",
+      kind: "tvm.amortization",
+      clientId: cl.body.client.id,
+      inputs: {},
+    });
+    const id = calc.body.calculation.id as string;
+
+    // Stranger preparer is not assigned to any engagement and did not
+    // create the calc — every endpoint must 404 (not 403, to avoid
+    // leaking existence).
+    expect((await request(h.app).get(`/api/v1/calculations/${id}`).set("Cookie", sC)).status).toBe(
+      404,
+    );
+    expect(
+      (
+        await request(h.app)
+          .post(`/api/v1/calculations/${id}/save`)
+          .set("Cookie", sC)
+          .send({ inputs: { v: 1 } })
+      ).status,
+    ).toBe(404);
+    expect(
+      (await request(h.app).get(`/api/v1/calculations/${id}/versions`).set("Cookie", sC)).status,
+    ).toBe(404);
+    expect(
+      (await request(h.app).post(`/api/v1/calculations/${id}/archive`).set("Cookie", sC)).status,
+    ).toBe(404);
+
+    // Bulk archive: stranger's id list is silently filtered to empty.
+    const bulk = await request(h.app)
+      .post("/api/v1/bulk/calculations/archive")
+      .set("Cookie", sC)
+      .send({ ids: [id] });
+    expect(bulk.status).toBe(200);
+    expect(bulk.body.updatedIds).toEqual([]);
   });
 
   it("audit chain: every action records an event, validator passes intact chain, breaks on tamper", async () => {

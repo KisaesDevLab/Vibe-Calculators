@@ -2,8 +2,10 @@ import { Router, type Request, type Response } from "express";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { users, type Database } from "@vibe-calc/db";
+import { recoveryCodes } from "@vibe-calc/db";
+import { and } from "drizzle-orm";
 import { verifyPassword } from "../lib/password.js";
-import { verifyTotp } from "../lib/totp.js";
+import { verifyTotp, hashRecoveryCode } from "../lib/totp.js";
 import { ROLLING_TTL_MS, createSession, resolveSession, revokeSession } from "../lib/sessions.js";
 import { setSessionCookie, clearSessionCookie, SESSION_COOKIE_NAME } from "../lib/cookies.js";
 import { recordAuthEvent } from "../lib/auth-events.js";
@@ -46,6 +48,13 @@ const magicLinkRequestSchema = z.object({
 
 const magicLinkConsumeSchema = z.object({
   token: z.string().min(32),
+  /** TOTP code (6 digits) — required when target user has TOTP enabled. */
+  totpCode: z
+    .string()
+    .regex(/^\d{6}$/u)
+    .optional(),
+  /** One-shot recovery code — alternative to totpCode for 2FA users. */
+  recoveryCode: z.string().min(8).max(64).optional(),
 });
 
 export function buildAuthRouter(deps: AuthRouteDeps): Router {
@@ -166,6 +175,17 @@ export function buildAuthRouter(deps: AuthRouteDeps): Router {
       return problem(res, 400, "Bad request", "Invalid magic-link body");
     }
     const ip = clientIp(req);
+    // Rate-limit per (ip, email) to prevent mailbox-spam abuse. Same
+    // attempt-limit + escalation ladder as login.
+    const status = await deps.rateLimiter.status(ip, parsed.data.email);
+    if (status.locked) {
+      return problem(
+        res,
+        429,
+        "Too many requests",
+        `Rate limit hit for magic-link issuance. Retry after ${Math.ceil(status.retryAfterMs / 1000)}s.`,
+      );
+    }
     const [user] = await deps.db
       .select()
       .from(users)
@@ -173,6 +193,9 @@ export function buildAuthRouter(deps: AuthRouteDeps): Router {
       .limit(1);
     // Always 202 to avoid disclosing email enumeration.
     if (!user || user.archivedAt !== null || user.status === "suspended") {
+      // Charge the rate-limit even on miss, so an attacker can't
+      // probe email enumeration for free.
+      await deps.rateLimiter.recordFailure(ip, parsed.data.email);
       return res.status(202).json({ accepted: true });
     }
 
@@ -209,6 +232,54 @@ export function buildAuthRouter(deps: AuthRouteDeps): Router {
         payload: { reason: result.reason },
       });
       return problem(res, 401, "Invalid token", `Magic link is ${result.reason}`);
+    }
+
+    // 2FA gate: if the target user has TOTP enabled, the magic-link
+    // consume MUST be paired with either a current TOTP code OR a
+    // one-shot recovery code. A magic link alone is single-factor and
+    // cannot bypass 2FA.
+    if (result.user.totpEnabled) {
+      const totpCode = parsed.data.totpCode;
+      const recoveryCode = parsed.data.recoveryCode;
+      let secondFactorOk = false;
+      if (totpCode && result.user.totpSecret) {
+        const secret = deps.totpSealer.unseal(result.user.totpSecret);
+        secondFactorOk = verifyTotp(secret, totpCode);
+      } else if (recoveryCode) {
+        const codeHash = hashRecoveryCode(recoveryCode);
+        // One-shot consume: delete-by-(userId, codeHash) and accept
+        // only if exactly one row matched.
+        const deleted = await deps.db
+          .delete(recoveryCodes)
+          .where(
+            and(eq(recoveryCodes.userId, result.user.id), eq(recoveryCodes.codeHash, codeHash)),
+          )
+          .returning({ id: recoveryCodes.id });
+        secondFactorOk = deleted.length === 1;
+        if (secondFactorOk) {
+          await recordAuthEvent(deps.db, {
+            kind: "totp.recovery_used",
+            userId: result.user.id,
+            ip,
+            userAgent: req.headers["user-agent"] ?? undefined,
+          });
+        }
+      }
+      if (!secondFactorOk) {
+        await recordAuthEvent(deps.db, {
+          kind: "magic_link.consumed.failed",
+          userId: result.user.id,
+          ip,
+          userAgent: req.headers["user-agent"] ?? undefined,
+          payload: { reason: "2fa_required" },
+        });
+        return problem(
+          res,
+          401,
+          "TOTP required",
+          "This account has 2FA enabled. Provide totpCode or recoveryCode.",
+        );
+      }
     }
 
     // First successful magic-link login activates a pending user.

@@ -163,12 +163,16 @@ export function problem(
   });
 }
 
-/** Returns the requesting client's IP, honouring X-Forwarded-For when set. */
+/**
+ * Returns the requesting client's IP.
+ *
+ * **Important**: do NOT read X-Forwarded-For yourself. Caddy appends
+ * to that header; the leftmost value is attacker-controlled. Express's
+ * `req.ip` honours `trust proxy = 1` (set in server.ts) and returns
+ * the rightmost trusted hop (the actual client). Reading the raw
+ * header was a CVE-class bug — see security audit pass-2.
+ */
 export function clientIp(req: Request): string {
-  const xff = req.headers["x-forwarded-for"];
-  if (typeof xff === "string" && xff.length > 0) {
-    return xff.split(",")[0]!.trim();
-  }
   return req.ip ?? "0.0.0.0";
 }
 

@@ -86,8 +86,11 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: "3000"
-      DATABASE_URL: postgres://${POSTGRES_USER:-vibecalculators}:${POSTGRES_PASSWORD:-vibecalculators}@postgres:5432/${POSTGRES_DB:-vibe_calculators_db}
-      REDIS_URL: redis://redis:6379/${VIBE_REDIS_DB:-2}
+      # POSTGRES_PASSWORD is REQUIRED — no default. Compose refuses to
+      # start if unset (the `?` syntax errors with the message). Same
+      # for REDIS_PASSWORD (used by both server and the redis service).
+      DATABASE_URL: postgres://${POSTGRES_USER:-vibecalculators}:${POSTGRES_PASSWORD:?must be set in .env}@postgres:5432/${POSTGRES_DB:-vibe_calculators_db}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?must be set in .env}@redis:6379/${VIBE_REDIS_DB:-2}
       VIBE_DEPLOY_MODE: ${VIBE_DEPLOY_MODE:-lan}
       VIBE_OFFLINE: ${VIBE_OFFLINE:-false}
       LOG_LEVEL: ${LOG_LEVEL:-info}
@@ -125,7 +128,7 @@ services:
     restart: *restart
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-vibecalculators}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vibecalculators}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?must be set in .env}
       POSTGRES_DB: ${POSTGRES_DB:-vibe_calculators_db}
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
@@ -146,8 +149,13 @@ services:
     image: redis:7-alpine
     container_name: vibe-calculators-redis
     restart: *restart
+    # Require auth so a compromised sidecar / mis-firewalled host
+    # can't read keys. Also enable protected-mode (the default) and
+    # bind to 0.0.0.0 inside the docker network only.
     command:
       - "redis-server"
+      - "--requirepass"
+      - "${REDIS_PASSWORD:?must be set in .env}"
       - "--appendonly"
       - "yes"
       - "--save"
@@ -156,7 +164,10 @@ services:
     volumes:
       - redisdata:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      # redis-cli needs the password too once auth is on.
+      test: ["CMD", "sh", "-c", 'redis-cli -a "$$REDIS_PASSWORD" ping']
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?must be set in .env}
       interval: 10s
       timeout: 3s
       retries: 5

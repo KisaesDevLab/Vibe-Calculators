@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { and, eq, gt, isNull, lt } from "drizzle-orm";
+import { and, eq, gt, isNull, lt, sql } from "drizzle-orm";
 import { sessions, users, type Database, type SessionRow, type UserRow } from "@vibe-calc/db";
 
 /**
@@ -137,6 +137,31 @@ export async function revokeAllUserSessions(
     .update(sessions)
     .set({ revokedAt: now })
     .where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt)));
+}
+
+/**
+ * Revoke every session for the user EXCEPT one specified id. Used by
+ * password-change to invalidate all peer browsers without forcing the
+ * caller to re-log-in on their current tab.
+ */
+export async function revokeOtherUserSessions(
+  db: Database,
+  userId: string,
+  keepSessionId: string,
+  now: Date = new Date(),
+): Promise<void> {
+  await db
+    .update(sessions)
+    .set({ revokedAt: now })
+    .where(
+      and(
+        eq(sessions.userId, userId),
+        isNull(sessions.revokedAt),
+        // ne(...) — drizzle doesn't have a `ne` helper imported here, so
+        // express via sql.
+        sql`${sessions.id} != ${keepSessionId}`,
+      ),
+    );
 }
 
 export async function listActiveSessionsForUser(
