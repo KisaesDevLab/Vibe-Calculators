@@ -44,6 +44,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/engagements", label: "Engagements", icon: FolderOpen, permission: "engagement:read" },
   { to: "/extract", label: "AI extract", icon: FileText, permission: "ai:use" },
   { to: "/reports", label: "Reports", icon: FileText, permission: "export:download" },
+  { to: "/exports", label: "Exports", icon: FileText, permission: "export:create" },
   { to: "/admin/users", label: "Users", icon: Settings, permission: "user:list" },
   { to: "/admin/api-keys", label: "API keys", icon: Settings, permission: "user:list" },
   { to: "/admin/webhooks", label: "Webhooks", icon: Settings, permission: "user:list" },
@@ -51,6 +52,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/admin/firm-settings", label: "Firm settings", icon: Settings, permission: "user:list" },
   { to: "/admin/ai", label: "AI provider", icon: Settings, permission: "user:list" },
   { to: "/admin/ai-prompts", label: "AI prompts", icon: Settings, permission: "user:list" },
+  { to: "/admin/backups", label: "Backups", icon: Settings, permission: "backup:create" },
 ];
 
 export function AppShell({ children }: { children: ReactNode }): JSX.Element {

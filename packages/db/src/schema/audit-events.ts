@@ -44,6 +44,9 @@ export const auditActionEnum = pgEnum("audit_action", [
   // Export
   "export.created",
   "export.downloaded",
+  // Backup / restore (Phase 25.8)
+  "backup.created",
+  "backup.restore.requested",
 ]);
 
 export const auditEntityKindEnum = pgEnum("audit_entity_kind", [
@@ -53,6 +56,7 @@ export const auditEntityKindEnum = pgEnum("audit_entity_kind", [
   "calculation_version",
   "tag",
   "user",
+  "backup",
 ]);
 
 export const auditEvents = pgTable(

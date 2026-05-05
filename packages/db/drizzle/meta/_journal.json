@@ -113,6 +113,20 @@
       "when": 1778616000000,
       "tag": "0015_ai_prompts",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1778702400000,
+      "tag": "0016_export_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1778788800000,
+      "tag": "0017_backup_audit_actions",
+      "breakpoints": true
     }
   ]
 }

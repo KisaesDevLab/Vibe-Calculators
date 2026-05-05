@@ -129,6 +129,11 @@ services:
       - "3000"
     volumes:
       - pdf-output:/data/exports
+      # Phase 25.8 — backup snapshot volume mounted read-only so the
+      # restore-wizard UI can enumerate available backups without
+      # giving the API container any path to mutate them. The
+      # `vibecalc-installer backup` CLI writes here from the host.
+      - backups:/data/backups:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -241,6 +246,7 @@ volumes:
   pgdata:
   redisdata:
   pdf-output:
+  backups:
   caddy_data:
   caddy_config:
 

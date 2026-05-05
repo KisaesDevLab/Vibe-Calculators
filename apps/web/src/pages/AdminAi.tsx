@@ -20,6 +20,7 @@ interface AiStatus {
   provider: string | null;
   defaultModel: string | null;
   apiKeyHint: string | null;
+  localUrl?: string | null;
   offline: boolean;
 }
 
@@ -117,12 +118,15 @@ export function AdminAiPage(): JSX.Element {
           <Sparkles className="h-5 w-5 text-primary" /> AI provider
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Phase 23 loan-extraction reads{" "}
-          <code className="rounded bg-muted px-1 text-xs">ANTHROPIC_API_KEY</code> from the
-          appliance <code className="rounded bg-muted px-1 text-xs">.env</code> at boot. To rotate
-          the key, update <code className="rounded bg-muted px-1 text-xs">.env</code> and restart
-          the server container. This page surfaces current status and lets you smoke-test the
-          credential.
+          Phase 23 loan-extraction reads its provider configuration from{" "}
+          <code className="rounded bg-muted px-1 text-xs">.env</code> at boot. Cloud:{" "}
+          <code className="rounded bg-muted px-1 text-xs">ANTHROPIC_API_KEY</code>. Local:{" "}
+          <code className="rounded bg-muted px-1 text-xs">VIBE_LLM_LOCAL_URL</code>{" "}
+          (OpenAI-wire-format gateway like vibe-llm-server). When{" "}
+          <code className="rounded bg-muted px-1 text-xs">VIBE_OFFLINE=true</code> only the local
+          provider is selectable. To rotate, update{" "}
+          <code className="rounded bg-muted px-1 text-xs">.env</code> and restart the server
+          container.
         </p>
       </header>
 
@@ -146,7 +150,8 @@ export function AdminAiPage(): JSX.Element {
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-1 text-destructive">
-                      <XCircle className="h-4 w-4" /> No (set ANTHROPIC_API_KEY in .env)
+                      <XCircle className="h-4 w-4" /> No (set ANTHROPIC_API_KEY or
+                      VIBE_LLM_LOCAL_URL in .env)
                     </span>
                   )
                 }
@@ -157,6 +162,12 @@ export function AdminAiPage(): JSX.Element {
                 label="API key prefix"
                 value={status.data.apiKeyHint ? <code>{status.data.apiKeyHint}</code> : "—"}
               />
+              {status.data.provider === "local" && (
+                <Row
+                  label="Local LLM URL"
+                  value={status.data.localUrl ? <code>{status.data.localUrl}</code> : "—"}
+                />
+              )}
               <Row
                 label="Offline mode"
                 value={

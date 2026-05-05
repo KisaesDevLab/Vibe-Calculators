@@ -17,4 +17,5 @@ export * from "./extractions";
 export * from "./api-keys";
 export * from "./firm-settings";
 export * from "./ai-prompts";
+export * from "./export-jobs";
 export * from "./relations";

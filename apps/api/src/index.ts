@@ -20,6 +20,7 @@ const { createEmailProviderFromEnv, renderMagicLinkEmail } = await import("@vibe
 const { loadFirmSettings } = await import("./lib/firm-settings.js");
 type EmailProviderType = Awaited<ReturnType<typeof createEmailProviderFromEnv>>;
 const { runDeepHealth } = await import("./lib/deep-health.js");
+const { startExportWorker, stopExportWorker } = await import("./lib/export-queue.js");
 
 // Side-effect imports: importing @vibe-calc/tax-engine triggers each
 // calculator module's registerCalculator() call, populating the global
@@ -30,7 +31,8 @@ await import("@vibe-calc/tax-engine");
 const { registerTvmCalculators } = await import("./lib/tvm-calculators.js");
 registerTvmCalculators();
 
-const { AnthropicProvider } = await import("@vibe-calc/llm");
+const { AnthropicProvider, LocalProvider } = await import("@vibe-calc/llm");
+import type { LlmProvider as LlmProviderType } from "@vibe-calc/llm";
 
 // Drizzle DB used by every auth-aware route.
 const { db, pool } = createDatabase({ connectionString: env.DATABASE_URL });
@@ -70,20 +72,52 @@ try {
   );
 }
 
-// Optional LLM provider for Phase 23 loan-extraction. The appliance
-// reads ANTHROPIC_API_KEY (and optional VIBE_LLM_DEFAULT_MODEL) from
-// .env. When unset, the extractions route returns 503 with a clear
+// Optional LLM provider for Phase 23 loan-extraction.
+//
+// Selection rules:
+//   • VIBE_OFFLINE=true → only the local provider is selectable.
+//   • VIBE_LLM_PROVIDER explicitly set ("anthropic" | "local") → that one wins.
+//   • Otherwise: prefer Anthropic when ANTHROPIC_API_KEY is set,
+//     fall back to Local when VIBE_LLM_LOCAL_URL is set,
+//     undefined when neither is configured.
+//
+// When undefined, the extractions route returns 503 with a clear
 // "no LLM provider configured" message — the rest of the appliance
 // works offline-clean.
-const llmProvider =
-  process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY.trim().length > 0
-    ? new AnthropicProvider({
-        apiKey: process.env.ANTHROPIC_API_KEY,
-        defaultModel: process.env.VIBE_LLM_DEFAULT_MODEL ?? undefined,
-      })
-    : undefined;
+const llmProvider = ((): LlmProviderType | undefined => {
+  const offline = env.VIBE_OFFLINE === true;
+  const explicit = (process.env.VIBE_LLM_PROVIDER ?? "").toLowerCase();
+  const anthropicKey = process.env.ANTHROPIC_API_KEY?.trim();
+  const localUrl = process.env.VIBE_LLM_LOCAL_URL?.trim();
+  const wantAnthropic =
+    !offline && (explicit === "anthropic" || (!explicit && Boolean(anthropicKey)));
+  const wantLocal =
+    explicit === "local" ||
+    (offline && Boolean(localUrl)) ||
+    (!explicit && !anthropicKey && Boolean(localUrl));
+  if (wantAnthropic && anthropicKey) {
+    return new AnthropicProvider({
+      apiKey: anthropicKey,
+      defaultModel: process.env.VIBE_LLM_DEFAULT_MODEL ?? undefined,
+    });
+  }
+  if (wantLocal && localUrl) {
+    return new LocalProvider({
+      baseUrl: localUrl,
+      defaultModel:
+        process.env.VIBE_LLM_LOCAL_MODEL ?? process.env.VIBE_LLM_DEFAULT_MODEL ?? undefined,
+      apiKey: process.env.VIBE_LLM_LOCAL_API_KEY ?? undefined,
+    });
+  }
+  return undefined;
+})();
 if (llmProvider) {
-  logger.info({ model: process.env.VIBE_LLM_DEFAULT_MODEL ?? "default" }, "LLM provider ready");
+  logger.info(
+    { provider: llmProvider.name, model: process.env.VIBE_LLM_DEFAULT_MODEL ?? "default" },
+    "LLM provider ready",
+  );
+} else if (env.VIBE_OFFLINE) {
+  logger.info("LLM provider not configured (offline mode) — set VIBE_LLM_LOCAL_URL to enable");
 } else {
   logger.info("LLM provider not configured — Phase 23 extractions will return 503");
 }
@@ -142,7 +176,7 @@ const emitMagicLinkEmail = async (input: {
 // Number of migration tags shipped with this release; bumped each
 // time a new file lands in packages/db/drizzle/. The deep-health
 // schema-version probe asserts the applied count matches.
-const EXPECTED_MIGRATIONS = 16; // 0000..0015
+const EXPECTED_MIGRATIONS = 18; // 0000..0017
 
 const app = createApp({
   health: {
@@ -168,9 +202,16 @@ const app = createApp({
       emitMagicLinkEmail,
       llmProvider,
       ...(emailProvider ? { emailProvider } : {}),
+      exportQueue: { db, redis: { url: env.REDIS_URL } },
     },
   },
 });
+
+// Phase 13.7 — start the in-process export worker. BullMQ uses its
+// own Redis connection (separate from the rate-limiter's) so a long-
+// running PDF render can't starve auth throttling.
+startExportWorker({ db, redis: { url: env.REDIS_URL } });
+logger.info("export worker started");
 
 const server = app.listen(env.PORT, () => {
   logger.info(
@@ -183,6 +224,7 @@ async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, "Shutting down");
   server.close(() => undefined);
   await Promise.allSettled([
+    stopExportWorker(),
     pool.end(),
     rateLimitRedis.quit().catch(() => undefined),
     closeDatabase(),

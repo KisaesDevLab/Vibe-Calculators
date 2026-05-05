@@ -65,6 +65,10 @@ const EngagementDetailPage = lazy(() =>
 );
 const MyQueuePage = lazy(() => import("@/pages/MyQueue").then((m) => ({ default: m.MyQueuePage })));
 const ReportsStub = lazy(() => import("@/pages/stubs").then((m) => ({ default: m.ReportsStub })));
+const ExportsPage = lazy(() => import("@/pages/Exports").then((m) => ({ default: m.ExportsPage })));
+const AdminBackupsPage = lazy(() =>
+  import("@/pages/AdminBackups").then((m) => ({ default: m.AdminBackupsPage })),
+);
 
 // Phase 4.7 — TanStack Query defaults per CLAUDE.md.
 const queryClient = new QueryClient({
@@ -225,6 +229,18 @@ export function App(): JSX.Element {
                   }
                 />
                 <Route
+                  path="/exports"
+                  element={
+                    <RequirePerm perm="export:create">
+                      <ShelledRoute>
+                        <Suspense fallback={<RouteSpinner />}>
+                          <ExportsPage />
+                        </Suspense>
+                      </ShelledRoute>
+                    </RequirePerm>
+                  }
+                />
+                <Route
                   path="/calculations"
                   element={
                     <RequirePerm perm="calculation:read">
@@ -339,6 +355,18 @@ export function App(): JSX.Element {
                       <ShelledRoute>
                         <Suspense fallback={<RouteSpinner />}>
                           <AdminAiPromptsPage />
+                        </Suspense>
+                      </ShelledRoute>
+                    </RequirePerm>
+                  }
+                />
+                <Route
+                  path="/admin/backups"
+                  element={
+                    <RequirePerm perm="backup:create">
+                      <ShelledRoute>
+                        <Suspense fallback={<RouteSpinner />}>
+                          <AdminBackupsPage />
                         </Suspense>
                       </ShelledRoute>
                     </RequirePerm>

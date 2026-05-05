@@ -28,6 +28,8 @@ import { buildCalculatorsRouter, type CalculatorsRouteDeps } from "./routes/calc
 import { buildWorkbenchRouter } from "./routes/workbench.js";
 import { buildAdminAiRouter, type AdminAiRouteDeps } from "./routes/admin-ai.js";
 import { buildBulkExportRouter, type BulkExportRouteDeps } from "./routes/bulk-export.js";
+import { buildExportsRouter, type ExportRouteDeps } from "./routes/exports.js";
+import { buildAdminBackupsRouter, type AdminBackupsRouteDeps } from "./routes/admin-backups.js";
 import {
   buildAdminAiPromptsRouter,
   type AdminAiPromptsRouteDeps,
@@ -62,7 +64,9 @@ export interface ServerOptions {
       AdminAiRouteDeps &
       AdminAiPromptsRouteDeps &
       FirmSettingsRouteDeps &
-      BulkExportRouteDeps;
+      BulkExportRouteDeps &
+      ExportRouteDeps &
+      AdminBackupsRouteDeps;
   };
 }
 
@@ -128,6 +132,14 @@ export function createApp(options: ServerOptions = {}): Express {
     app.use("/api/v1/admin/firm-settings", buildFirmSettingsRouter(options.auth.routes));
     app.use("/api/v1/admin/ai-prompts", buildAdminAiPromptsRouter(options.auth.routes));
     app.use("/api/v1/calculations/bulk", buildBulkExportRouter(options.auth.routes));
+    app.use(
+      "/api/v1/exports",
+      buildExportsRouter({
+        db: options.auth.routes.db,
+        ...(options.auth.routes.exportQueue ? { queue: options.auth.routes.exportQueue } : {}),
+      }),
+    );
+    app.use("/api/v1/admin/backups", buildAdminBackupsRouter(options.auth.routes));
   }
 
   // Final RFC 7807 error handler — never leak stack traces or

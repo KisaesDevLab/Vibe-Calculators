@@ -53,11 +53,15 @@ export function buildAdminAiRouter(deps: AdminAiRouteDeps): Router {
     res.json({
       configured: Boolean(deps.llmProvider),
       provider: deps.llmProvider?.name ?? null,
-      defaultModel: env.VIBE_LLM_DEFAULT_MODEL ?? null,
+      defaultModel:
+        deps.llmProvider?.name === "local"
+          ? (env.VIBE_LLM_LOCAL_MODEL ?? env.VIBE_LLM_DEFAULT_MODEL ?? null)
+          : (env.VIBE_LLM_DEFAULT_MODEL ?? null),
       // Don't echo the API key — surface the prefix only so the
       // operator can confirm "yes, the right one is loaded" without
       // a full secret leak.
       apiKeyHint: env.ANTHROPIC_API_KEY ? `${env.ANTHROPIC_API_KEY.slice(0, 8)}…` : null,
+      localUrl: deps.llmProvider?.name === "local" ? (env.VIBE_LLM_LOCAL_URL ?? null) : null,
       offline: env.VIBE_OFFLINE === "true",
     });
   });

@@ -23,6 +23,7 @@
     "@vibe-calc/shared-types": "workspace:*",
     "@vibe-calc/tax-engine": "workspace:*",
     "@zxcvbn-ts/core": "3.0.4",
+    "bullmq": "5.34.4",
     "cookie-parser": "1.4.7",
     "drizzle-orm": "0.36.4",
     "express": "4.21.1",
