@@ -133,12 +133,15 @@ export function CalculatorRunnerPage(): JSX.Element {
             {result && (
               <div className="space-y-4">
                 <p className="text-sm leading-relaxed">{result.narrative}</p>
-                <div className="rounded-md bg-muted p-3">
-                  <p className="mb-2 text-xs font-medium uppercase text-muted-foreground">Output</p>
-                  <pre className="whitespace-pre-wrap text-xs">
+                <ResultGrid output={result.output} />
+                <details className="rounded-md border border-input">
+                  <summary className="cursor-pointer px-3 py-2 text-xs font-medium uppercase text-muted-foreground">
+                    Raw JSON
+                  </summary>
+                  <pre className="overflow-x-auto bg-muted/30 p-3 text-xs">
                     {JSON.stringify(result.output, null, 2)}
                   </pre>
-                </div>
+                </details>
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" onClick={() => setResult(null)}>
                     Reset
@@ -203,4 +206,105 @@ export function CalculatorRunnerPage(): JSX.Element {
       </div>
     </main>
   );
+}
+
+/**
+ * Phase 16+ — present a tax-calculator's output JSON as a labelled
+ * grid rather than a raw `JSON.stringify` blob. Each top-level key
+ * becomes a row; nested objects become a sub-table; arrays render
+ * as bulleted lists if scalar, or as rows-of-rows if objects.
+ *
+ * This isn't per-calculator-bespoke (each calculator could ship its
+ * own renderer for highest fidelity), but it's enough that a CPA
+ * sees "Section 179 Deduction: $1,160,000" instead of unreadable
+ * code formatting on day 1.
+ */
+function ResultGrid({ output }: { output: unknown }): JSX.Element {
+  if (output === null || output === undefined) {
+    return <p className="text-sm text-muted-foreground">No structured output.</p>;
+  }
+  if (typeof output !== "object") {
+    return <p className="text-sm">{String(output)}</p>;
+  }
+  const entries = Object.entries(output as Record<string, unknown>);
+  if (entries.length === 0) {
+    return <p className="text-sm text-muted-foreground">(empty)</p>;
+  }
+  return (
+    <div className="overflow-hidden rounded-md border border-input">
+      <table className="w-full text-sm">
+        <tbody>
+          {entries.map(([key, value]) => (
+            <tr key={key} className="border-b last:border-b-0">
+              <td className="w-1/3 bg-muted/30 px-3 py-1.5 align-top text-xs font-medium text-muted-foreground">
+                {humanizeKey(key)}
+              </td>
+              <td className="px-3 py-1.5 align-top">{renderValue(value)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function humanizeKey(key: string): string {
+  // camelCase → Title Case ("totalDeduction" → "Total deduction")
+  const spaced = key.replace(/([A-Z])/g, " $1").replace(/[_-]/g, " ");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1).toLowerCase();
+}
+
+function renderValue(value: unknown): JSX.Element {
+  if (value === null || value === undefined) {
+    return <span className="italic text-muted-foreground">—</span>;
+  }
+  if (typeof value === "boolean") {
+    return <span>{value ? "Yes" : "No"}</span>;
+  }
+  if (typeof value === "number") {
+    // Heuristic: format as currency if abs() >= 1 and looks money-shaped.
+    return <span className="font-mono text-right">{formatNumber(value)}</span>;
+  }
+  if (typeof value === "string") {
+    // Money-string heuristic: a numeric string that came from decimal.js.
+    if (/^-?\d+(\.\d+)?$/.test(value)) {
+      return <span className="font-mono">{formatNumber(Number(value))}</span>;
+    }
+    return <span>{value}</span>;
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) return <span className="italic text-muted-foreground">(none)</span>;
+    if (value.every((v) => typeof v !== "object" || v === null)) {
+      return (
+        <ul className="list-disc pl-5">
+          {value.map((v, i) => (
+            <li key={i}>{renderValue(v)}</li>
+          ))}
+        </ul>
+      );
+    }
+    return (
+      <div className="space-y-2">
+        {value.map((v, i) => (
+          <ResultGrid key={i} output={v} />
+        ))}
+      </div>
+    );
+  }
+  if (typeof value === "object") {
+    return <ResultGrid output={value} />;
+  }
+  return <span>{String(value)}</span>;
+}
+
+function formatNumber(n: number): string {
+  if (!Number.isFinite(n)) return String(n);
+  // Currency for non-tiny values; plain otherwise (rates, counts).
+  if (Math.abs(n) >= 1 && Number.isInteger(n * 100)) {
+    return n.toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+  return n.toLocaleString("en-US", { maximumFractionDigits: 6 });
 }

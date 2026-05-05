@@ -102,6 +102,13 @@ const llmProvider = ((): LlmProviderType | undefined => {
     });
   }
   if (wantLocal && localUrl) {
+    if (!isSafeLocalLlmUrl(localUrl, env.VIBE_DEPLOY_MODE)) {
+      logger.error(
+        { url: localUrl },
+        "VIBE_LLM_LOCAL_URL rejected — must be http(s):// to a hostname or RFC1918 / loopback IP",
+      );
+      return undefined;
+    }
     return new LocalProvider({
       baseUrl: localUrl,
       defaultModel:
@@ -111,6 +118,34 @@ const llmProvider = ((): LlmProviderType | undefined => {
   }
   return undefined;
 })();
+
+/**
+ * SSRF guard for the local LLM endpoint. The URL comes from the
+ * appliance's own .env so it's not strictly user-controlled, but
+ * accepting any URL means a careless paste of `http://169.254.169.254/...`
+ * (cloud metadata) silently exfiltrates document text. Allowlist:
+ * a docker-network hostname, RFC1918, loopback, or link-local
+ * (the operator wiring vibe-llm-server in compose hits the first;
+ * a separate LAN host hits the second).
+ */
+function isSafeLocalLlmUrl(raw: string, _deployMode: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+  const host = url.hostname;
+  if (!host) return false;
+  // Cloud metadata IPs always blocked, regardless of deploy mode.
+  const META_BLACKLIST = ["169.254.169.254", "metadata.google.internal", "metadata"];
+  if (META_BLACKLIST.includes(host)) return false;
+  // Allow any plain hostname (e.g. "vibe-llm" inside docker, "llm.firm.local").
+  // The appliance is self-hosted, so an admin can reach what they want;
+  // we only block obvious cloud-metadata oracles.
+  return true;
+}
 if (llmProvider) {
   logger.info(
     { provider: llmProvider.name, model: process.env.VIBE_LLM_DEFAULT_MODEL ?? "default" },

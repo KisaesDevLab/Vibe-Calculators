@@ -220,16 +220,39 @@ export function ProfilePage(): JSX.Element {
             </div>
           </div>
         ) : recoveryCodes ? (
-          <div className="mt-3">
-            <p className="text-sm">
-              2FA is enabled. Save these recovery codes — each works once if you lose your
-              authenticator.
+          <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-50/50 p-3 dark:bg-amber-500/10">
+            <p className="text-sm font-medium">
+              2FA enabled. Save these recovery codes — each works once if you lose your
+              authenticator. We will not show them again.
             </p>
             <ul className="mt-2 grid grid-cols-2 gap-1 font-mono text-sm">
               {recoveryCodes.map((c) => (
                 <li key={c}>{c}</li>
               ))}
             </ul>
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={() => downloadRecoveryCodes(recoveryCodes)}
+                className="rounded-md border border-input bg-background px-3 py-1.5 text-xs hover:bg-accent"
+              >
+                Download .txt
+              </button>
+              <button
+                type="button"
+                onClick={() => copyRecoveryCodes(recoveryCodes)}
+                className="rounded-md border border-input bg-background px-3 py-1.5 text-xs hover:bg-accent"
+              >
+                Copy all
+              </button>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="rounded-md border border-input bg-background px-3 py-1.5 text-xs hover:bg-accent"
+              >
+                Print
+              </button>
+            </div>
           </div>
         ) : (
           <button
@@ -277,6 +300,27 @@ export function ProfilePage(): JSX.Element {
       </section>
     </main>
   );
+}
+
+function downloadRecoveryCodes(codes: string[]): void {
+  const text =
+    "Vibe Calculators — recovery codes\n" +
+    "Each code works once. Store somewhere safe (password manager / printed).\n\n" +
+    codes.join("\n") +
+    "\n";
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `vibe-recovery-codes-${new Date().toISOString().slice(0, 10)}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function copyRecoveryCodes(codes: string[]): void {
+  void navigator.clipboard?.writeText(codes.join("\n"));
 }
 
 function PreferencesSection(): JSX.Element {

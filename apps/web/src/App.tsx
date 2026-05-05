@@ -64,7 +64,6 @@ const EngagementDetailPage = lazy(() =>
   import("@/pages/EngagementDetail").then((m) => ({ default: m.EngagementDetailPage })),
 );
 const MyQueuePage = lazy(() => import("@/pages/MyQueue").then((m) => ({ default: m.MyQueuePage })));
-const ReportsStub = lazy(() => import("@/pages/stubs").then((m) => ({ default: m.ReportsStub })));
 const ExportsPage = lazy(() => import("@/pages/Exports").then((m) => ({ default: m.ExportsPage })));
 const AdminBackupsPage = lazy(() =>
   import("@/pages/AdminBackups").then((m) => ({ default: m.AdminBackupsPage })),
@@ -94,7 +93,7 @@ export function App(): JSX.Element {
               <CommandPalette />
               <Toaster position="bottom-right" richColors />
               <Routes>
-                <Route path="/" element={<Navigate to="/health" replace />} />
+                <Route path="/" element={<Navigate to="/calculators" replace />} />
                 <Route path="/setup" element={<SetupWizardPage />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/login/magic" element={<MagicLinkPage />} />
@@ -216,18 +215,7 @@ export function App(): JSX.Element {
                     </RequirePerm>
                   }
                 />
-                <Route
-                  path="/reports"
-                  element={
-                    <RequirePerm perm="export:download">
-                      <ShelledRoute>
-                        <Suspense fallback={<RouteSpinner />}>
-                          <ReportsStub />
-                        </Suspense>
-                      </ShelledRoute>
-                    </RequirePerm>
-                  }
-                />
+                <Route path="/reports" element={<Navigate to="/exports" replace />} />
                 <Route
                   path="/exports"
                   element={
@@ -291,7 +279,7 @@ export function App(): JSX.Element {
                 <Route
                   path="/admin/api-keys"
                   element={
-                    <RequirePerm perm="user:list">
+                    <RequirePerm perm="settings:write">
                       <ShelledRoute>
                         <Suspense fallback={<RouteSpinner />}>
                           <AdminApiKeysPage />
@@ -303,7 +291,7 @@ export function App(): JSX.Element {
                 <Route
                   path="/admin/webhooks"
                   element={
-                    <RequirePerm perm="user:list">
+                    <RequirePerm perm="settings:write">
                       <ShelledRoute>
                         <Suspense fallback={<RouteSpinner />}>
                           <AdminWebhooksPage />
@@ -327,7 +315,7 @@ export function App(): JSX.Element {
                 <Route
                   path="/admin/ai"
                   element={
-                    <RequirePerm perm="user:list">
+                    <RequirePerm perm="ai:configure">
                       <ShelledRoute>
                         <Suspense fallback={<RouteSpinner />}>
                           <AdminAiPage />
@@ -339,7 +327,7 @@ export function App(): JSX.Element {
                 <Route
                   path="/admin/firm-settings"
                   element={
-                    <RequirePerm perm="user:list">
+                    <RequirePerm perm="settings:write">
                       <ShelledRoute>
                         <Suspense fallback={<RouteSpinner />}>
                           <AdminFirmSettingsPage />
@@ -351,7 +339,7 @@ export function App(): JSX.Element {
                 <Route
                   path="/admin/ai-prompts"
                   element={
-                    <RequirePerm perm="user:list">
+                    <RequirePerm perm="ai:configure">
                       <ShelledRoute>
                         <Suspense fallback={<RouteSpinner />}>
                           <AdminAiPromptsPage />
@@ -370,6 +358,16 @@ export function App(): JSX.Element {
                         </Suspense>
                       </ShelledRoute>
                     </RequirePerm>
+                  }
+                />
+                <Route
+                  path="*"
+                  element={
+                    <RequireAuth>
+                      <ShelledRoute>
+                        <NotFoundPage />
+                      </ShelledRoute>
+                    </RequireAuth>
                   }
                 />
               </Routes>
@@ -399,6 +397,31 @@ function RouteSpinner(): JSX.Element {
   return (
     <main className="flex min-h-[40vh] items-center justify-center text-sm text-muted-foreground">
       Loading…
+    </main>
+  );
+}
+
+function NotFoundPage(): JSX.Element {
+  return (
+    <main className="mx-auto max-w-2xl px-6 py-16 text-center">
+      <h1 className="text-3xl font-semibold tracking-tight">Page not found</h1>
+      <p className="mt-3 text-sm text-muted-foreground">
+        The page you requested doesn&apos;t exist or has moved. Use the sidebar to get back to a
+        familiar place.
+      </p>
+      <div className="mt-6 flex justify-center gap-3 text-sm">
+        <a className="text-primary underline-offset-4 hover:underline" href="/calculators">
+          Calculators
+        </a>
+        <span className="text-muted-foreground">·</span>
+        <a className="text-primary underline-offset-4 hover:underline" href="/queue">
+          My queue
+        </a>
+        <span className="text-muted-foreground">·</span>
+        <a className="text-primary underline-offset-4 hover:underline" href="/exports">
+          Exports
+        </a>
+      </div>
     </main>
   );
 }

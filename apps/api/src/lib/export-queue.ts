@@ -158,7 +158,12 @@ export function startExportWorker(deps: ExportQueueDeps): Worker<ExportJobPayloa
     },
     {
       connection: deps.redis,
-      concurrency: Number(process.env.VIBE_EXPORT_CONCURRENCY ?? "2"),
+      // concurrency 1 by default. PDF rendering is CPU-bound and runs
+      // in the same process as the HTTP loop; two parallel renders
+      // can starve the event loop long enough for the 3s healthcheck
+      // to fail and trigger a container restart. Operators with a
+      // dedicated worker box can bump this via env.
+      concurrency: Number(process.env.VIBE_EXPORT_CONCURRENCY ?? "1"),
     },
   );
   workerInstance.on("failed", (job, err) => {

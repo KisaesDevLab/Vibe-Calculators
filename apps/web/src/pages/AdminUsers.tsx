@@ -181,7 +181,18 @@ export function AdminUsersPage(): JSX.Element {
                     </td>
                     <td className="space-x-2 px-3 py-2">
                       {u.status !== "suspended" ? (
-                        <button onClick={() => suspend.mutate(u.id)} className="text-xs underline">
+                        <button
+                          onClick={() => {
+                            if (
+                              window.confirm(
+                                `Suspend ${u.email}? They will be signed out and unable to log in until you unsuspend.`,
+                              )
+                            ) {
+                              suspend.mutate(u.id);
+                            }
+                          }}
+                          className="text-xs underline"
+                        >
                           Suspend
                         </button>
                       ) : (
@@ -193,14 +204,30 @@ export function AdminUsersPage(): JSX.Element {
                         </button>
                       )}
                       <button
-                        onClick={() => resetPassword.mutate(u.id)}
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              `Send password-reset email to ${u.email}? Their current password keeps working until they redeem the link.`,
+                            )
+                          ) {
+                            resetPassword.mutate(u.id);
+                          }
+                        }}
                         className="text-xs underline"
                       >
                         Reset password
                       </button>
                       {u.totpEnabled && (
                         <button
-                          onClick={() => requireTotp.mutate(u.id)}
+                          onClick={() => {
+                            if (
+                              window.confirm(
+                                `Reset 2FA for ${u.email}? Their authenticator + recovery codes are wiped and they MUST re-enroll on next sign-in.`,
+                              )
+                            ) {
+                              requireTotp.mutate(u.id);
+                            }
+                          }}
                           className="text-xs underline"
                         >
                           Reset 2FA

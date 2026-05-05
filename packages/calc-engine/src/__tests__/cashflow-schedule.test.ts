@@ -14,6 +14,19 @@ const masterMonthly: MasterCalculationSettings = {
   computeMethod: "Normal",
 };
 
+describe("generateSchedule — compute-method guard", () => {
+  it("refuses non-Normal compute methods with a clear error", () => {
+    const events: CashFlowEvent[] = [
+      { date: utc(2025, 1, 1), kind: "loan", amount: money("1000") },
+    ];
+    for (const method of ["USRule", "RuleOf78", "Canadian", "ExactDays"] as const) {
+      expect(() => generateSchedule(events, { ...masterMonthly, computeMethod: method })).toThrow(
+        /not yet implemented/,
+      );
+    }
+  });
+});
+
 describe("generateSchedule — Normal compute", () => {
   it("simple loan + 12 monthly payments produces 13 rows", () => {
     const events: CashFlowEvent[] = [

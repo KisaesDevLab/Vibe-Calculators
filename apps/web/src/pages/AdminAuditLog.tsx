@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ShieldCheck, ShieldAlert } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -148,9 +148,8 @@ function EventTable({ rows }: { rows: AuditEventRow[] }): JSX.Element {
         </thead>
         <tbody>
           {rows.map((r) => (
-            <>
+            <Fragment key={r.id}>
               <tr
-                key={r.id}
                 className="cursor-pointer border-b hover:bg-muted/40"
                 onClick={() => setExpandedId(expandedId === r.id ? null : r.id)}
               >
@@ -163,7 +162,7 @@ function EventTable({ rows }: { rows: AuditEventRow[] }): JSX.Element {
                 <td className="px-2 py-2 font-mono text-xs">{r.rowHash.slice(0, 12)}…</td>
               </tr>
               {expandedId === r.id && (
-                <tr key={r.id + "-expand"} className="border-b">
+                <tr className="border-b">
                   <td colSpan={5} className="bg-muted/30 px-3 py-3">
                     <pre className="overflow-x-auto whitespace-pre-wrap text-xs">
                       {JSON.stringify(r.payload, null, 2)}
@@ -171,7 +170,7 @@ function EventTable({ rows }: { rows: AuditEventRow[] }): JSX.Element {
                   </td>
                 </tr>
               )}
-            </>
+            </Fragment>
           ))}
         </tbody>
       </table>

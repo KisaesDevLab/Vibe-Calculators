@@ -1,5 +1,6 @@
-import { type ReactNode } from "react";
-import { NavLink } from "react-router-dom";
+import { type ReactNode, useState, useRef, useEffect } from "react";
+import { NavLink, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Calculator,
   Users,
@@ -11,12 +12,16 @@ import {
   Moon,
   Monitor,
   Inbox,
+  ChevronDown,
+  LogOut,
+  User,
 } from "lucide-react";
 import { useAuth } from "@/auth/AuthContext";
 import { useTheme } from "@/theme/ThemeProvider";
 import { useUiStore } from "@/store/ui";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { authApi } from "@/auth/api";
 
 /**
  * Phase 4.1 — application shell.
@@ -43,15 +48,19 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/clients", label: "Clients", icon: Users, permission: "client:read" },
   { to: "/engagements", label: "Engagements", icon: FolderOpen, permission: "engagement:read" },
   { to: "/extract", label: "AI extract", icon: FileText, permission: "ai:use" },
-  { to: "/reports", label: "Reports", icon: FileText, permission: "export:download" },
   { to: "/exports", label: "Exports", icon: FileText, permission: "export:create" },
   { to: "/admin/users", label: "Users", icon: Settings, permission: "user:list" },
-  { to: "/admin/api-keys", label: "API keys", icon: Settings, permission: "user:list" },
-  { to: "/admin/webhooks", label: "Webhooks", icon: Settings, permission: "user:list" },
+  { to: "/admin/api-keys", label: "API keys", icon: Settings, permission: "settings:write" },
+  { to: "/admin/webhooks", label: "Webhooks", icon: Settings, permission: "settings:write" },
   { to: "/admin/audit", label: "Audit log", icon: Settings, permission: "audit:read" },
-  { to: "/admin/firm-settings", label: "Firm settings", icon: Settings, permission: "user:list" },
-  { to: "/admin/ai", label: "AI provider", icon: Settings, permission: "user:list" },
-  { to: "/admin/ai-prompts", label: "AI prompts", icon: Settings, permission: "user:list" },
+  {
+    to: "/admin/firm-settings",
+    label: "Firm settings",
+    icon: Settings,
+    permission: "settings:write",
+  },
+  { to: "/admin/ai", label: "AI provider", icon: Settings, permission: "ai:configure" },
+  { to: "/admin/ai-prompts", label: "AI prompts", icon: Settings, permission: "ai:configure" },
   { to: "/admin/backups", label: "Backups", icon: Settings, permission: "backup:create" },
 ];
 
@@ -150,12 +159,75 @@ function ThemeToggle(): JSX.Element {
 }
 
 function UserMenu({ name }: { name: string }): JSX.Element {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (!open) return;
+    function onClick(e: MouseEvent): void {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent): void {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  async function signOut(): Promise<void> {
+    setOpen(false);
+    try {
+      await authApi.logout();
+    } catch {
+      // even if the server-side delete fails (e.g. session already
+      // gone), bounce the UI state — user expectation is "I clicked
+      // sign out, now I'm out."
+    }
+    queryClient.removeQueries({ queryKey: ["auth", "me"] });
+    queryClient.clear();
+    navigate("/login", { replace: true });
+  }
+
   return (
-    <NavLink
-      to="/me"
-      className="flex h-9 items-center rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent"
-    >
-      {name}
-    </NavLink>
+    <div className="relative" ref={ref}>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setOpen((v) => !v)}
+        className="h-9 px-3 text-sm font-medium"
+      >
+        {name}
+        <ChevronDown className="ml-1 h-3 w-3" />
+      </Button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 z-50 mt-1 w-48 overflow-hidden rounded-md border border-border bg-popover shadow-md"
+        >
+          <NavLink
+            to="/me"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
+            role="menuitem"
+          >
+            <User className="h-4 w-4" /> Profile & 2FA
+          </NavLink>
+          <button
+            type="button"
+            onClick={() => void signOut()}
+            className="flex w-full items-center gap-2 border-t border-border px-3 py-2 text-left text-sm text-destructive hover:bg-destructive/10"
+            role="menuitem"
+          >
+            <LogOut className="h-4 w-4" /> Sign out
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

@@ -65,6 +65,19 @@ export interface ScheduleResult {
 const ZERO = new Decimal(0);
 
 /**
+ * Thrown by `generateSchedule` when input is structurally valid but
+ * the engine cannot produce a TValue-parity result — e.g. a compute
+ * method that hasn't been implemented yet. Routes catch this and
+ * surface a 422 to the operator rather than emitting wrong cents.
+ */
+export class ScheduleGenerationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ScheduleGenerationError";
+  }
+}
+
+/**
  * Expand series events into atomic per-period events. Core supports:
  *   - stepped_amount       — payment count * (base + step * floor((k-stepEvery)/stepEvery))
  *   - interest_only        — sentinel row that the schedule generator
@@ -170,6 +183,18 @@ export function generateSchedule(
   events: CashFlowEvent[],
   master: MasterCalculationSettings,
 ): ScheduleResult {
+  // Phase 7.3 — until the alternate-compute paths are validated
+  // against TValue parity, refuse to silently produce numbers under
+  // a method we haven't implemented. The four exotic methods are
+  // declared in the type but the engine only runs Normal (compound)
+  // accrual today; emitting wrong cents under the wrong header
+  // would be worse for a CPA tool than refusing the request.
+  if (master.computeMethod !== "Normal") {
+    throw new ScheduleGenerationError(
+      `ComputeMethod '${master.computeMethod}' is declared but not yet implemented in the schedule engine. ` +
+        `Use 'Normal' (compound interest) — the only method currently producing TValue-parity output.`,
+    );
+  }
   // Sort by date; preserve relative order within the same date.
   const sorted = [...events].sort((a, b) => a.date.getTime() - b.date.getTime());
   const expanded = expandSeries(sorted);

@@ -189,7 +189,7 @@ export function EngagementDetailPage(): JSX.Element {
                 {engagement.assignedReviewerId ?? <span className="italic">unassigned</span>}
               </div>
               <p className="text-xs text-muted-foreground">
-                Reassign via Admin → Users (Phase 21 wires inline assignment).
+                Use the assignment endpoint or the bulk-actions panel to reassign.
               </p>
             </CardContent>
           </Card>

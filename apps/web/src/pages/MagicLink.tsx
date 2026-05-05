@@ -101,7 +101,7 @@ function ConsumeView({ token }: { token: string }): JSX.Element {
         await authApi.consumeMagicLink(token);
         await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
         setState("ok");
-        navigate("/health", { replace: true });
+        navigate("/calculators", { replace: true });
       } catch (err) {
         setState("error");
         setError(err instanceof ApiError ? err.message : "Unknown error");

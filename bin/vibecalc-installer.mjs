@@ -153,7 +153,7 @@ async function cmdInstall(opts) {
       "--rm",
       "--no-deps",
       "--entrypoint",
-      "node",
+      "/nodejs/bin/node",
       "vibe-calculators-server",
       "/app/node_modules/@vibe-calc/db/dist/migrate.js",
     ],
@@ -169,7 +169,7 @@ async function cmdInstall(opts) {
       "--rm",
       "--no-deps",
       "--entrypoint",
-      "node",
+      "/nodejs/bin/node",
       "vibe-calculators-server",
       "/app/node_modules/@vibe-calc/db/dist/bootstrap-cli.js",
     ],
@@ -196,7 +196,7 @@ async function cmdUpgrade() {
       "--rm",
       "--no-deps",
       "--entrypoint",
-      "node",
+      "/nodejs/bin/node",
       "vibe-calculators-server",
       "/app/node_modules/@vibe-calc/db/dist/migrate.js",
     ],
@@ -398,6 +398,16 @@ async function cmdRestore(args) {
     console.error(`backup at ${path} is missing pgdump.bin or pdf-output.tgz`);
     return 1;
   }
+  // Docker -v parses on `:`. A Windows drive prefix (`C:\...`) and
+  // any user-named directory containing a colon would split the
+  // mount spec into host:container:options and fail in surprising
+  // ways. Refuse the path explicitly rather than producing a
+  // confusing tar error inside the helper container.
+  const absolutePath = resolve(path);
+  if (absolutePath.includes(":") && !absolutePath.match(/^[a-zA-Z]:[\\/]/)) {
+    console.error(`backup path contains a colon, which would break docker -v: ${absolutePath}`);
+    return 1;
+  }
   if (!args.includes("--i-know")) {
     console.error("restore is DESTRUCTIVE — overwrites the live DB and exports volume.");
     console.error("Pass --i-know to confirm. Aborting.");
@@ -503,9 +513,13 @@ function generateEnvFile({ firmName, adminEmail, deployMode, domain, tlsEmail, e
   env.LOG_LEVEL ??= "info";
   env.POSTGRES_USER ??= "vibecalculators";
   env.POSTGRES_DB ??= "vibe_calculators_db";
-  env.POSTGRES_PASSWORD ??= randomBytes(24).toString("base64").replace(/[/+=]/g, "");
+  // Hex passwords (0-9 a-f) avoid collisions with URL reserved
+  // characters — base64 can produce `:` `@` `/` `+` `=` which
+  // either need URL-encoding or break the postgres://user:pass@
+  // form. 32 hex chars = 128 bits of entropy; 48 = 192 bits.
+  env.POSTGRES_PASSWORD ??= randomBytes(24).toString("hex");
   env.DATABASE_URL ??= `postgres://${env.POSTGRES_USER}:${env.POSTGRES_PASSWORD}@postgres:5432/${env.POSTGRES_DB}`;
-  env.REDIS_PASSWORD ??= randomBytes(24).toString("base64").replace(/[/+=]/g, "");
+  env.REDIS_PASSWORD ??= randomBytes(24).toString("hex");
   env.REDIS_URL ??= `redis://:${env.REDIS_PASSWORD}@redis:6379/2`;
   env.VIBE_REDIS_DB ??= "2";
   env.VIBE_DEPLOY_MODE = deployMode;

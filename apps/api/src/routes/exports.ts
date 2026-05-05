@@ -5,7 +5,12 @@ import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { exportJobs, type Database } from "@vibe-calc/db";
 import { problem, requirePermission } from "../middleware/auth.js";
-import { enqueueExport, EXPORT_ROOT_DIR, type ExportQueueDeps } from "../lib/export-queue.js";
+import {
+  enqueueExport,
+  getExportQueue,
+  EXPORT_ROOT_DIR,
+  type ExportQueueDeps,
+} from "../lib/export-queue.js";
 import { permittedCalculationIds } from "../lib/ownership.js";
 
 /**
@@ -36,35 +41,40 @@ interface InternalDeps {
   queue?: ExportQueueDeps | undefined;
 }
 
+// All calculation IDs are UUIDs in the DB. Enforcing the UUID shape
+// at the boundary closes path-traversal and SSRF-via-id risks
+// downstream (we use the id as a path segment under /data/exports).
+const calcIdSchema = z.string().uuid();
+
 const enqueueSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("tvm-pdf"),
-    calculationId: z.string().min(1),
+    calculationId: calcIdSchema,
     options: z.record(z.unknown()).optional(),
   }),
   z.object({
     kind: z.literal("memo-pdf"),
-    calculationId: z.string().min(1),
+    calculationId: calcIdSchema,
     options: z.record(z.unknown()).optional(),
   }),
   z.object({
     kind: z.literal("xlsx"),
-    calculationId: z.string().min(1),
+    calculationId: calcIdSchema,
     options: z.record(z.unknown()).optional(),
   }),
   z.object({
     kind: z.literal("csv"),
-    calculationId: z.string().min(1),
+    calculationId: calcIdSchema,
     options: z.record(z.unknown()).optional(),
   }),
   z.object({
     kind: z.literal("docx"),
-    calculationId: z.string().min(1),
+    calculationId: calcIdSchema,
     options: z.record(z.unknown()).optional(),
   }),
   z.object({
     kind: z.literal("bulk-zip"),
-    calculationIds: z.array(z.string().min(1)).min(1).max(50),
+    calculationIds: z.array(calcIdSchema).min(1).max(50),
     options: z.record(z.unknown()).optional(),
   }),
 ]);
@@ -159,9 +169,12 @@ export function buildExportsRouter(deps: InternalDeps): Router {
       }
       // Containment check: the resolved path must stay under
       // EXPORT_ROOT_DIR. Defense against any future path-traversal
-      // bug in how filePath gets persisted.
+      // bug in how filePath gets persisted. `path.relative` returns
+      // a string starting with `..` for any path that escapes the
+      // root — the safer check across platforms.
       const resolved = path.resolve(row.filePath);
-      if (!resolved.startsWith(path.resolve(EXPORT_ROOT_DIR) + path.sep)) {
+      const rel = path.relative(path.resolve(EXPORT_ROOT_DIR), resolved);
+      if (rel.startsWith("..") || path.isAbsolute(rel)) {
         return problem(res, 500, "Internal error", "Export path outside data dir");
       }
       try {
@@ -193,6 +206,22 @@ export function buildExportsRouter(deps: InternalDeps): Router {
       if (!row) return problem(res, 404, "Not found", "Export job not found");
       if (row.status === "done" || row.status === "failed") {
         return problem(res, 409, "Conflict", `Cannot cancel a ${row.status} job`);
+      }
+      // Best-effort BullMQ removal so a queued job that hasn't started
+      // yet doesn't fire after the user cancels. If the worker has
+      // already started, BullMQ's `remove()` will fail with "Cannot
+      // remove a job that is in active state" — we ignore that and
+      // rely on the row's status='failed' to signal "abandon" to the
+      // worker (which, on completion, will overwrite to 'done'; that's
+      // accepted: cancelling an already-running render is best-effort).
+      if (deps.queue) {
+        try {
+          const queue = getExportQueue(deps.queue);
+          const bullJob = await queue.getJob(id);
+          if (bullJob) await bullJob.remove();
+        } catch {
+          // ignore — see comment above
+        }
       }
       const [updated] = await deps.db
         .update(exportJobs)

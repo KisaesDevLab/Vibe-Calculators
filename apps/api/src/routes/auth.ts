@@ -229,6 +229,9 @@ export function buildAuthRouter(deps: AuthRouteDeps): Router {
       consumeUrl,
       expiresAt: issued.expiresAt,
     });
+    // Charge the rate-limit on every issuance, not just on misses,
+    // so a known-good email can't be used to mailbox-bomb the user.
+    await deps.rateLimiter.recordFailure(ip, parsed.data.email);
     await recordAuthEvent(deps.db, {
       kind: "magic_link.requested",
       userId: user.id,

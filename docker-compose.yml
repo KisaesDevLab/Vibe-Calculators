@@ -234,11 +234,11 @@ services:
     healthcheck:
       # redis-cli needs the password too once auth is on.
       test: ["CMD", "sh", "-c", 'redis-cli -a "$$REDIS_PASSWORD" ping']
-    environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:?must be set in .env}
       interval: 10s
       timeout: 3s
       retries: 5
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?must be set in .env}
     networks:
       - vibe
 

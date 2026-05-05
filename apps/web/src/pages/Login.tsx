@@ -35,7 +35,7 @@ export function LoginPage(): JSX.Element {
         ...(totpCode ? { totpCode } : {}),
       });
       await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
-      const target = (location.state as LocationState | undefined)?.from ?? "/health";
+      const target = (location.state as LocationState | undefined)?.from ?? "/calculators";
       navigate(target, { replace: true });
     } catch (err) {
       if (err instanceof ApiError) {
