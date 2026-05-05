@@ -3,10 +3,14 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { users, type Database } from "@vibe-calc/db";
 import { recoveryCodes } from "@vibe-calc/db";
-import { and } from "drizzle-orm";
 import { verifyPassword } from "../lib/password.js";
-import { verifyTotp, hashRecoveryCode } from "../lib/totp.js";
-import { ROLLING_TTL_MS, createSession, resolveSession, revokeSession } from "../lib/sessions.js";
+import { verifyTotpWithCounter, verifyRecoveryCode } from "../lib/totp.js";
+import {
+  ROLLING_TTL_MS,
+  createSession,
+  resolveSession,
+  revokeSessionByToken,
+} from "../lib/sessions.js";
 import { setSessionCookie, clearSessionCookie, SESSION_COOKIE_NAME } from "../lib/cookies.js";
 import { recordAuthEvent } from "../lib/auth-events.js";
 import {
@@ -114,20 +118,35 @@ export function buildAuthRouter(deps: AuthRouteDeps): Router {
         return problem(res, 500, "Server error", "TOTP enabled but no secret stored");
       }
       const secret = deps.totpSealer.unseal(user.totpSecret);
-      if (!verifyTotp(secret, totpCode)) {
+      const totpResult = verifyTotpWithCounter(secret, totpCode);
+      // Reject (a) wrong code and (b) replayed code (counter <= last
+      // accepted). The 30s window means a leaked code is otherwise
+      // valid until the wallclock advances; counter persistence
+      // closes the window.
+      const lastCounter = user.totpLastCounter ?? -1;
+      if (!totpResult.ok || totpResult.counter === undefined || totpResult.counter <= lastCounter) {
         const failure = await deps.rateLimiter.recordFailure(ip, email);
         await recordAuthEvent(deps.db, {
           kind: "login.failed",
           userId: user.id,
           ip,
           userAgent: req.headers["user-agent"] ?? undefined,
-          payload: { email, reason: "bad-totp" },
+          payload: {
+            email,
+            reason: !totpResult.ok ? "bad-totp" : "totp-replay",
+          },
         });
         return rejectLogin(res, failure);
       }
+      // Persist the counter so the same code can't be used again
+      // even within its 30s validity window.
+      await deps.db
+        .update(users)
+        .set({ totpLastCounter: totpResult.counter })
+        .where(eq(users.id, user.id));
     }
 
-    const session = await createSession(deps.db, {
+    const created = await createSession(deps.db, {
       userId: user.id,
       ip,
       userAgent: req.headers["user-agent"] ?? undefined,
@@ -141,13 +160,15 @@ export function buildAuthRouter(deps: AuthRouteDeps): Router {
       userId: user.id,
       ip,
       userAgent: req.headers["user-agent"] ?? undefined,
-      payload: { sessionId: session.id },
+      // Audit log records the hashed id, not the plaintext token —
+      // the token is sensitive and lives only in the response cookie.
+      payload: { sessionId: created.session.id },
     });
 
-    setSessionCookie(res, session.id, { deployMode: deps.env.VIBE_DEPLOY_MODE });
+    setSessionCookie(res, created.token, { deployMode: deps.env.VIBE_DEPLOY_MODE });
     res.status(200).json({
       user: publicUser(user, permissionsFor(user.role)),
-      session: { expiresAt: session.expiresAt.toISOString() },
+      session: { expiresAt: created.session.expiresAt.toISOString() },
     });
   });
 
@@ -156,7 +177,8 @@ export function buildAuthRouter(deps: AuthRouteDeps): Router {
     if (sid) {
       const resolved = await resolveSession(deps.db, sid);
       if (resolved) {
-        await revokeSession(deps.db, sid);
+        // Cookie carries the plaintext token; hash it before deleting.
+        await revokeSessionByToken(deps.db, sid);
         await recordAuthEvent(deps.db, {
           kind: "logout",
           userId: resolved.user.id,
@@ -244,18 +266,34 @@ export function buildAuthRouter(deps: AuthRouteDeps): Router {
       let secondFactorOk = false;
       if (totpCode && result.user.totpSecret) {
         const secret = deps.totpSealer.unseal(result.user.totpSecret);
-        secondFactorOk = verifyTotp(secret, totpCode);
+        const totpResult = verifyTotpWithCounter(secret, totpCode);
+        const lastCounter = result.user.totpLastCounter ?? -1;
+        if (totpResult.ok && totpResult.counter !== undefined && totpResult.counter > lastCounter) {
+          secondFactorOk = true;
+          await deps.db
+            .update(users)
+            .set({ totpLastCounter: totpResult.counter })
+            .where(eq(users.id, result.user.id));
+        }
       } else if (recoveryCode) {
-        const codeHash = hashRecoveryCode(recoveryCode);
-        // One-shot consume: delete-by-(userId, codeHash) and accept
-        // only if exactly one row matched.
-        const deleted = await deps.db
-          .delete(recoveryCodes)
-          .where(
-            and(eq(recoveryCodes.userId, result.user.id), eq(recoveryCodes.codeHash, codeHash)),
-          )
-          .returning({ id: recoveryCodes.id });
-        secondFactorOk = deleted.length === 1;
+        // Argon2id-hashed codes embed a per-call salt, so we can't
+        // delete-by-hash. Load all of the user's codes, verify the
+        // candidate against each, and delete the matching row.
+        const stored = await deps.db
+          .select({ id: recoveryCodes.id, hash: recoveryCodes.codeHash })
+          .from(recoveryCodes)
+          .where(eq(recoveryCodes.userId, result.user.id));
+        let matchedId: string | null = null;
+        for (const row of stored) {
+          if (await verifyRecoveryCode(row.hash, recoveryCode)) {
+            matchedId = row.id;
+            break;
+          }
+        }
+        if (matchedId) {
+          await deps.db.delete(recoveryCodes).where(eq(recoveryCodes.id, matchedId));
+          secondFactorOk = true;
+        }
         if (secondFactorOk) {
           await recordAuthEvent(deps.db, {
             kind: "totp.recovery_used",
@@ -291,7 +329,7 @@ export function buildAuthRouter(deps: AuthRouteDeps): Router {
       result.user.status = "active";
     }
 
-    const session = await createSession(deps.db, {
+    const created = await createSession(deps.db, {
       userId: result.user.id,
       ip,
       userAgent: req.headers["user-agent"] ?? undefined,
@@ -301,12 +339,12 @@ export function buildAuthRouter(deps: AuthRouteDeps): Router {
       userId: result.user.id,
       ip,
       userAgent: req.headers["user-agent"] ?? undefined,
-      payload: { sessionId: session.id },
+      payload: { sessionId: created.session.id },
     });
-    setSessionCookie(res, session.id, { deployMode: deps.env.VIBE_DEPLOY_MODE });
+    setSessionCookie(res, created.token, { deployMode: deps.env.VIBE_DEPLOY_MODE });
     res.status(200).json({
       user: publicUser(result.user, permissionsFor(result.user.role)),
-      session: { expiresAt: session.expiresAt.toISOString() },
+      session: { expiresAt: created.session.expiresAt.toISOString() },
     });
   });
 

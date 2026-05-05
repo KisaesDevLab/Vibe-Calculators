@@ -31,6 +31,7 @@ const changePasswordSchema = z.object({
   newPassword: z.string().min(12),
 });
 
+const totpSetupSchema = z.object({ password: z.string().min(1) });
 const totpEnableSchema = z.object({ code: z.string().regex(/^\d{6}$/) });
 const totpDisableSchema = z.object({ password: z.string().min(1) });
 
@@ -78,6 +79,23 @@ export function buildMeRouter(deps: MeRouteDeps): Router {
     if (user.totpEnabled) {
       return problem(res, 409, "Conflict", "TOTP already enabled");
     }
+    // Sudo re-auth: require the current password before enrolling a
+    // new authenticator. Without this, a hijacked session could
+    // silently enroll the attacker's authenticator and lock the
+    // legitimate user out at next 2FA challenge.
+    const parsed = totpSetupSchema.safeParse(req.body);
+    if (!parsed.success) return problem(res, 400, "Bad request", "Password required for sudo");
+    if (!user.passwordHash) {
+      return problem(
+        res,
+        409,
+        "Conflict",
+        "Set a password (POST /me/password) before enrolling 2FA",
+      );
+    }
+    const ok = await verifyPassword(user.passwordHash, parsed.data.password);
+    if (!ok) return problem(res, 401, "Unauthorized", "Wrong password");
+
     const enroll = buildEnrollment(user.email);
     const sealed = deps.totpSealer.seal(enroll.secretBase32);
     await deps.db.update(users).set({ totpSecret: sealed }).where(eq(users.id, user.id));
@@ -97,10 +115,13 @@ export function buildMeRouter(deps: MeRouteDeps): Router {
       return problem(res, 401, "Unauthorized", "TOTP code is wrong");
     }
     const codes = generateRecoveryCodes();
+    // Argon2id is per-call salt-randomized + ~50ms per hash — generate
+    // hashes in parallel to keep enrollment latency reasonable.
+    const codeRows = await Promise.all(
+      codes.map(async (c) => ({ userId: user.id, codeHash: await hashRecoveryCode(c) })),
+    );
     await deps.db.update(users).set({ totpEnabled: true }).where(eq(users.id, user.id));
-    await deps.db
-      .insert(recoveryCodes)
-      .values(codes.map((c) => ({ userId: user.id, codeHash: hashRecoveryCode(c) })));
+    await deps.db.insert(recoveryCodes).values(codeRows);
     await recordAuthEvent(deps.db, {
       kind: "totp.enrolled",
       userId: user.id,

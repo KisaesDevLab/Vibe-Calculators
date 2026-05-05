@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, ne, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { recoveryCodes, users, type Database } from "@vibe-calc/db";
 import { recordAuthEvent } from "../lib/auth-events.js";
@@ -27,6 +27,40 @@ const inviteSchema = z.object({
 });
 
 const roleChangeSchema = z.object({ role: RoleSchema });
+
+/**
+ * Last-active-admin guard. Returns { blocked: true, reason } when the
+ * pending mutation (suspend/demote) would leave zero active admins.
+ * Last-admin-out is operationally catastrophic — no further user
+ * admin can occur until a DBA edits the rows directly.
+ */
+async function wouldRemoveLastActiveAdmin(
+  db: Database,
+  targetId: string,
+  action: "suspend" | "demote",
+): Promise<{ blocked: false } | { blocked: true; reason: string }> {
+  const remainingAdmins = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(
+      and(
+        eq(users.role, "admin"),
+        eq(users.status, "active"),
+        isNull(users.archivedAt),
+        ne(users.id, targetId),
+      ),
+    );
+  if (remainingAdmins.length === 0) {
+    return {
+      blocked: true,
+      reason:
+        action === "suspend"
+          ? "Cannot suspend the last active admin — promote another user first."
+          : "Cannot demote the last active admin — promote another user first.",
+    };
+  }
+  return { blocked: false };
+}
 
 const clearLockoutSchema = z.object({
   email: z.string().email().toLowerCase(),
@@ -110,6 +144,15 @@ export function buildAdminUsersRouter(deps: AdminUserRouteDeps): Router {
     async (req: Request, res: Response) => {
       const id = typeof req.params.id === "string" ? req.params.id : "";
       if (!id) return problem(res, 400, "Bad request", "Missing id");
+      // Self-suspend would orphan the actor's session AND potentially
+      // remove the last active admin. Refuse outright.
+      if (req.user?.id === id) {
+        return problem(res, 409, "Conflict", "An admin cannot suspend their own account");
+      }
+      const lastAdminCheck = await wouldRemoveLastActiveAdmin(deps.db, id, "suspend");
+      if (lastAdminCheck.blocked) {
+        return problem(res, 409, "Conflict", lastAdminCheck.reason);
+      }
       await deps.db.update(users).set({ status: "suspended" }).where(eq(users.id, id));
       await revokeAllUserSessions(deps.db, id);
       await recordAuthEvent(deps.db, {
@@ -147,6 +190,19 @@ export function buildAdminUsersRouter(deps: AdminUserRouteDeps): Router {
       if (!id) return problem(res, 400, "Bad request", "Missing id");
       const parsed = roleChangeSchema.safeParse(req.body);
       if (!parsed.success) return problem(res, 400, "Bad request", "Invalid role");
+      // Self-demote would lock the actor out of further admin work
+      // and could orphan the firm if they're the only admin.
+      if (req.user?.id === id && parsed.data.role !== "admin") {
+        return problem(res, 409, "Conflict", "An admin cannot change their own role");
+      }
+      // Last-active-admin guard: refuse if changing this user's role
+      // away from `admin` would leave zero active admins firm-wide.
+      if (parsed.data.role !== "admin") {
+        const lastAdminCheck = await wouldRemoveLastActiveAdmin(deps.db, id, "demote");
+        if (lastAdminCheck.blocked) {
+          return problem(res, 409, "Conflict", lastAdminCheck.reason);
+        }
+      }
       await deps.db.update(users).set({ role: parsed.data.role }).where(eq(users.id, id));
       await recordAuthEvent(deps.db, {
         kind: "user.role_changed",

@@ -25,6 +25,14 @@ export interface DispatchInput {
   now?: Date;
   /** Hard per-request timeout. Default 10s. */
   timeoutMs?: number;
+  /**
+   * Optional unseal hook. When set, called for every subscription's
+   * `secret` column before computing the HMAC — required when the
+   * column stores KMS-sealed envelopes (post-H8). Defaults to
+   * identity (treat the column value as the plaintext key) so old
+   * test fixtures keep working.
+   */
+  unsealSecret?: (sealed: string) => string;
 }
 
 export async function dispatchWebhook(
@@ -59,9 +67,24 @@ export async function dispatchWebhook(
     return s.actions.includes(input.action);
   });
 
+  const unseal = input.unsealSecret ?? ((s: string) => s);
   for (const sub of matching) {
     const t = Math.floor(now.getTime() / 1000);
-    const sig = createHmac("sha256", sub.secret).update(`${t}.${body}`).digest("hex");
+    let plaintextSecret: string;
+    try {
+      plaintextSecret = unseal(sub.secret);
+    } catch (err) {
+      failures++;
+      await db
+        .update(webhookSubscriptions)
+        .set({
+          lastFailureMessage: `secret unseal failed: ${err instanceof Error ? err.message : String(err)}`,
+          lastFiredAt: now,
+        })
+        .where(eq(webhookSubscriptions.id, sub.id));
+      continue;
+    }
+    const sig = createHmac("sha256", plaintextSecret).update(`${t}.${body}`).digest("hex");
     // DNS-rebinding defense: resolve the URL's hostname NOW and
     // validate every resolved IP against the same private-IP
     // deny-list the create-time SSRF guard uses. A hostname like

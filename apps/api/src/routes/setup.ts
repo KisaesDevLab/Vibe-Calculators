@@ -56,12 +56,12 @@ export function buildSetupRouter(deps: SetupRouteDeps): Router {
       return problem(res, 410, "Gone", "Setup is closed");
     }
 
-    const session = await createSession(deps.db, {
+    const created = await createSession(deps.db, {
       userId: result.userId,
       ip: clientIp(req),
       userAgent: req.headers["user-agent"] ?? undefined,
     });
-    setSessionCookie(res, session.id, { deployMode: deps.env.VIBE_DEPLOY_MODE });
+    setSessionCookie(res, created.token, { deployMode: deps.env.VIBE_DEPLOY_MODE });
     res.status(201).json({
       user: {
         id: result.userId,

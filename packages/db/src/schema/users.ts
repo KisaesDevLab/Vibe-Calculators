@@ -1,4 +1,13 @@
-import { pgTable, text, timestamp, boolean, pgEnum, index, uniqueIndex } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  text,
+  timestamp,
+  boolean,
+  bigint,
+  pgEnum,
+  index,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 /**
@@ -39,6 +48,13 @@ export const users = pgTable(
     lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
     totpSecret: text("totp_secret"),
     totpEnabled: boolean("totp_enabled").notNull().default(false),
+    /**
+     * Last accepted TOTP step counter. Each successful verify advances
+     * this so the same code (which is valid for 30s) cannot be replayed
+     * within its window. Persisting at the user row keeps the check
+     * single-table.
+     */
+    totpLastCounter: bigint("totp_last_counter", { mode: "number" }),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
   },
   (t) => ({

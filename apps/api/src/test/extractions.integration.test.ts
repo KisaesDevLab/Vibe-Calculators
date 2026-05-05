@@ -52,6 +52,7 @@ interface AppHarness {
 
 function buildAppHarness(db: TestDb, llm: LlmProvider | undefined): AppHarness {
   const env = { VIBE_DEPLOY_MODE: "lan" as const };
+  const testKms = createKms(randomBytes(32).toString("base64"));
   const app = createApp({
     auth: {
       middleware: { db, env },
@@ -59,7 +60,8 @@ function buildAppHarness(db: TestDb, llm: LlmProvider | undefined): AppHarness {
         db,
         env,
         rateLimiter: createRateLimiter(memoryStore()),
-        totpSealer: sealerFrom(createKms(randomBytes(32).toString("base64"))),
+        totpSealer: sealerFrom(testKms),
+        kms: testKms,
         emitMagicLinkEmail: () => undefined,
         ...(llm ? { llmProvider: llm } : {}),
       },
@@ -87,7 +89,7 @@ async function seedUser(
 
 async function cookie(db: TestDb, userId: string): Promise<string> {
   const s = await createSession(db, { userId });
-  return `${SESSION_COOKIE_NAME}=${s.id}`;
+  return `${SESSION_COOKIE_NAME}=${s.token}`;
 }
 
 describe("extractions — integration", () => {

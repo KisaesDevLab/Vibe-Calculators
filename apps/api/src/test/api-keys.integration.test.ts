@@ -16,10 +16,12 @@ import { dispatchWebhook, verifyWebhookSignature } from "../lib/webhook-dispatch
 interface AppHarness {
   db: TestDb;
   app: Express;
+  testKms: ReturnType<typeof createKms>;
 }
 
 function buildAppHarness(db: TestDb): AppHarness {
   const env = { VIBE_DEPLOY_MODE: "lan" as const };
+  const testKms = createKms(randomBytes(32).toString("base64"));
   const app = createApp({
     auth: {
       middleware: { db, env },
@@ -27,12 +29,13 @@ function buildAppHarness(db: TestDb): AppHarness {
         db,
         env,
         rateLimiter: createRateLimiter(memoryStore()),
-        totpSealer: sealerFrom(createKms(randomBytes(32).toString("base64"))),
+        totpSealer: sealerFrom(testKms),
+        kms: testKms,
         emitMagicLinkEmail: () => undefined,
       },
     },
   });
-  return { db, app };
+  return { db, app, testKms };
 }
 
 async function seedAdmin(db: TestDb): Promise<{ id: string }> {
@@ -51,7 +54,7 @@ async function seedAdmin(db: TestDb): Promise<{ id: string }> {
 
 async function cookie(db: TestDb, userId: string): Promise<string> {
   const s = await createSession(db, { userId });
-  return `${SESSION_COOKIE_NAME}=${s.id}`;
+  return `${SESSION_COOKIE_NAME}=${s.token}`;
 }
 
 describe("API keys + webhooks — integration", () => {
@@ -136,13 +139,15 @@ describe("API keys + webhooks — integration", () => {
       return new Response("ok", { status: 200 });
     };
 
-    // Matching action
+    // Matching action — pass `unsealSecret` so the dispatcher can
+    // unwrap the KMS-sealed envelope stored on the row (H8).
     const match = await dispatchWebhook(h.db, {
       action: "calculation.create",
       entityKind: "calculation",
       entityId: "abc",
       payload: { hello: "world" },
       fetcher: stubFetch,
+      unsealSecret: (s) => h.testKms.decrypt(s),
     });
     expect(match.fired).toBe(1);
     expect(match.successes).toBe(1);
@@ -154,6 +159,7 @@ describe("API keys + webhooks — integration", () => {
       entityKind: "engagement",
       entityId: "xyz",
       fetcher: stubFetch,
+      unsealSecret: (s) => h.testKms.decrypt(s),
     });
     expect(noMatch.fired).toBe(0);
   });
