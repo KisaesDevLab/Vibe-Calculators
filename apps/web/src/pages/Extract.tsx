@@ -30,8 +30,30 @@ export function ExtractPage(): JSX.Element {
   const [filename, setFilename] = useState("loan-agreement.txt");
   const [text, setText] = useState("");
   const [running, setRunning] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [extraction, setExtraction] = useState<ExtractionRow | null>(null);
   const [flagged, setFlagged] = useState<string[]>([]);
+  const [redactBeforeSend, setRedactBeforeSend] = useState(true);
+
+  async function uploadFile(e: React.ChangeEvent<HTMLInputElement>): Promise<void> {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const r = await extractApi.upload(file, redactBeforeSend);
+      setFilename(r.filename);
+      setText(r.text);
+      const parts: string[] = [`${r.characters.toLocaleString()} chars parsed`];
+      if (r.pages !== undefined) parts.push(`${r.pages} page${r.pages === 1 ? "" : "s"}`);
+      if (r.redactionsApplied) parts.push(`${r.redactionsApplied} redactions`);
+      toast.success(parts.join(" · "));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  }
 
   async function runExtraction(): Promise<void> {
     if (text.trim().length < 20) {
@@ -94,6 +116,34 @@ export function ExtractPage(): JSX.Element {
             <CardTitle className="text-base">Source document</CardTitle>
           </CardHeader>
           <CardContent>
+            <div className="mb-3 rounded-md border border-input p-3">
+              <p className="mb-2 text-xs font-medium uppercase text-muted-foreground">
+                Upload PDF / DOCX / TXT (≤ 10 MB)
+              </p>
+              <div className="flex items-center gap-3">
+                <input
+                  type="file"
+                  accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+                  onChange={uploadFile}
+                  disabled={uploading}
+                />
+                {uploading && <span className="text-xs text-muted-foreground">Parsing…</span>}
+              </div>
+              <label className="mt-2 flex items-center gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  checked={redactBeforeSend}
+                  onChange={(e) => setRedactBeforeSend(e.target.checked)}
+                />
+                <span>
+                  Scrub SSN / EIN / long-digit account numbers before parsing
+                  <span className="ml-1 text-muted-foreground">
+                    (recommended for cloud-LLM extractions)
+                  </span>
+                </span>
+              </label>
+            </div>
+
             <label className="block">
               <span className="mb-1 block text-xs font-medium uppercase text-muted-foreground">
                 Filename / label

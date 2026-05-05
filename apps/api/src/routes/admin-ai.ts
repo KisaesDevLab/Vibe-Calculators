@@ -1,6 +1,8 @@
 import { Router, type Request, type Response } from "express";
+import { desc, gte } from "drizzle-orm";
 import { z } from "zod";
 import type { LlmProvider } from "@vibe-calc/llm";
+import { extractionJobs, users, type Database } from "@vibe-calc/db";
 import { problem, requirePermission } from "../middleware/auth.js";
 
 /**
@@ -18,6 +20,24 @@ import { problem, requirePermission } from "../middleware/auth.js";
 
 export interface AdminAiRouteDeps {
   llmProvider?: LlmProvider | undefined;
+  db?: Database;
+}
+
+/**
+ * Phase 23.14 — token cost ledger.
+ *
+ * Anthropic Claude Sonnet 4.6 published rates (as of 2026-05):
+ *   input  = $3.00 / 1M tokens
+ *   output = $15.00 / 1M tokens
+ * The constants are env-overridable so an operator can pin to the
+ * rate sheet they actually pay. The math is simple — we don't track
+ * per-call price snapshots; recompute from current rates.
+ */
+const PRICE_PER_M_INPUT = Number(process.env.VIBE_LLM_PRICE_INPUT_PER_M ?? "3.00");
+const PRICE_PER_M_OUTPUT = Number(process.env.VIBE_LLM_PRICE_OUTPUT_PER_M ?? "15.00");
+
+function tokenCostUsd(inputTokens: number, outputTokens: number): number {
+  return (inputTokens * PRICE_PER_M_INPUT + outputTokens * PRICE_PER_M_OUTPUT) / 1_000_000;
 }
 
 const testSchema = z.object({
@@ -39,6 +59,100 @@ export function buildAdminAiRouter(deps: AdminAiRouteDeps): Router {
       // a full secret leak.
       apiKeyHint: env.ANTHROPIC_API_KEY ? `${env.ANTHROPIC_API_KEY.slice(0, 8)}…` : null,
       offline: env.VIBE_OFFLINE === "true",
+    });
+  });
+
+  // Phase 23.14 — usage ledger. Returns rolling 30-day stats:
+  // totals, per-user, and per-day. Anchored to extraction_jobs.input_tokens
+  // / output_tokens, costs computed at current rate-sheet.
+  router.get("/usage", requirePermission("user:list"), async (req: Request, res: Response) => {
+    if (!req.user) return problem(res, 401, "Unauthorized", "Authentication required");
+    if (!deps.db) {
+      return problem(res, 503, "Service unavailable", "Database not configured");
+    }
+    const sinceDays = Math.max(1, Math.min(365, Number(req.query.days ?? 30)));
+    const since = new Date(Date.now() - sinceDays * 86_400_000);
+    const rows = await deps.db
+      .select()
+      .from(extractionJobs)
+      .where(gte(extractionJobs.createdAt, since))
+      .orderBy(desc(extractionJobs.createdAt));
+    const userRows = await deps.db.select({ id: users.id, name: users.name }).from(users);
+    const userById = new Map(userRows.map((u) => [u.id, u.name]));
+
+    let totalInput = 0;
+    let totalOutput = 0;
+    let totalCost = 0;
+    let totalCalls = 0;
+    let totalSucceeded = 0;
+    const perUser = new Map<
+      string,
+      { name: string; calls: number; input: number; output: number; cost: number }
+    >();
+    const perDay = new Map<
+      string,
+      { calls: number; input: number; output: number; cost: number }
+    >();
+
+    for (const r of rows) {
+      const inputT = r.inputTokens ?? 0;
+      const outputT = r.outputTokens ?? 0;
+      const cost = tokenCostUsd(inputT, outputT);
+      const day = r.createdAt.toISOString().slice(0, 10);
+      const userId = r.createdBy ?? "system";
+      const userName = userById.get(userId) ?? "(unknown)";
+
+      totalCalls++;
+      totalInput += inputT;
+      totalOutput += outputT;
+      totalCost += cost;
+      if (r.status === "approved" || r.status === "needs_review") totalSucceeded++;
+
+      const u = perUser.get(userId) ?? { name: userName, calls: 0, input: 0, output: 0, cost: 0 };
+      u.calls++;
+      u.input += inputT;
+      u.output += outputT;
+      u.cost += cost;
+      perUser.set(userId, u);
+
+      const d = perDay.get(day) ?? { calls: 0, input: 0, output: 0, cost: 0 };
+      d.calls++;
+      d.input += inputT;
+      d.output += outputT;
+      d.cost += cost;
+      perDay.set(day, d);
+    }
+
+    res.json({
+      windowDays: sinceDays,
+      since: since.toISOString(),
+      rates: { inputPerM: PRICE_PER_M_INPUT, outputPerM: PRICE_PER_M_OUTPUT },
+      totals: {
+        calls: totalCalls,
+        succeeded: totalSucceeded,
+        inputTokens: totalInput,
+        outputTokens: totalOutput,
+        costUsd: Number(totalCost.toFixed(4)),
+      },
+      perUser: [...perUser.entries()]
+        .map(([id, v]) => ({
+          userId: id,
+          name: v.name,
+          calls: v.calls,
+          inputTokens: v.input,
+          outputTokens: v.output,
+          costUsd: Number(v.cost.toFixed(4)),
+        }))
+        .sort((a, b) => b.costUsd - a.costUsd),
+      perDay: [...perDay.entries()]
+        .map(([day, v]) => ({
+          day,
+          calls: v.calls,
+          inputTokens: v.input,
+          outputTokens: v.output,
+          costUsd: Number(v.cost.toFixed(4)),
+        }))
+        .sort((a, b) => a.day.localeCompare(b.day)),
     });
   });
 

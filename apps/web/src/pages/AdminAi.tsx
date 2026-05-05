@@ -32,6 +32,34 @@ interface AiTestResult {
   outputTokens: number;
 }
 
+interface AiUsage {
+  windowDays: number;
+  since: string;
+  rates: { inputPerM: number; outputPerM: number };
+  totals: {
+    calls: number;
+    succeeded: number;
+    inputTokens: number;
+    outputTokens: number;
+    costUsd: number;
+  };
+  perUser: Array<{
+    userId: string;
+    name: string;
+    calls: number;
+    inputTokens: number;
+    outputTokens: number;
+    costUsd: number;
+  }>;
+  perDay: Array<{
+    day: string;
+    calls: number;
+    inputTokens: number;
+    outputTokens: number;
+    costUsd: number;
+  }>;
+}
+
 async function call<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
   const res = await fetch(input, {
     credentials: "include",
@@ -55,6 +83,10 @@ export function AdminAiPage(): JSX.Element {
   const status = useQuery({
     queryKey: ["admin", "ai", "status"],
     queryFn: () => call<AiStatus>("/api/v1/admin/ai"),
+  });
+  const usage = useQuery({
+    queryKey: ["admin", "ai", "usage"],
+    queryFn: () => call<AiUsage>("/api/v1/admin/ai/usage?days=30"),
   });
 
   const [prompt, setPrompt] = useState("Reply with exactly the word: ok");
@@ -140,6 +172,73 @@ export function AdminAiPage(): JSX.Element {
         </CardContent>
       </Card>
 
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="text-base">Usage (rolling 30 days)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {usage.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+          {usage.isError && (
+            <p className="text-sm text-destructive">{String((usage.error as Error).message)}</p>
+          )}
+          {usage.data && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <Stat label="Calls" value={usage.data.totals.calls.toLocaleString()} />
+                <Stat
+                  label="Succeeded"
+                  value={`${usage.data.totals.succeeded} / ${usage.data.totals.calls}`}
+                />
+                <Stat
+                  label="Tokens (in / out)"
+                  value={`${usage.data.totals.inputTokens.toLocaleString()} / ${usage.data.totals.outputTokens.toLocaleString()}`}
+                />
+                <Stat
+                  label="Cost"
+                  value={`$${usage.data.totals.costUsd.toLocaleString("en-US", { minimumFractionDigits: 4 })}`}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Rates: ${usage.data.rates.inputPerM.toFixed(2)}/M input, $
+                {usage.data.rates.outputPerM.toFixed(2)}/M output. Override via
+                VIBE_LLM_PRICE_INPUT_PER_M / OUTPUT_PER_M env.
+              </p>
+              {usage.data.perUser.length > 0 && (
+                <div>
+                  <p className="mb-1 text-xs font-medium uppercase text-muted-foreground">
+                    Per user
+                  </p>
+                  <table className="w-full text-sm">
+                    <thead className="border-b text-left text-xs uppercase text-muted-foreground">
+                      <tr>
+                        <th className="px-2 py-1">User</th>
+                        <th className="px-2 py-1 text-right">Calls</th>
+                        <th className="px-2 py-1 text-right">Tokens</th>
+                        <th className="px-2 py-1 text-right">Cost</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {usage.data.perUser.map((r) => (
+                        <tr key={r.userId} className="border-b">
+                          <td className="px-2 py-1">{r.name}</td>
+                          <td className="px-2 py-1 text-right">{r.calls}</td>
+                          <td className="px-2 py-1 text-right">
+                            {(r.inputTokens + r.outputTokens).toLocaleString()}
+                          </td>
+                          <td className="px-2 py-1 text-right">
+                            ${r.costUsd.toLocaleString("en-US", { minimumFractionDigits: 4 })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
@@ -175,6 +274,15 @@ export function AdminAiPage(): JSX.Element {
         </CardContent>
       </Card>
     </main>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }): JSX.Element {
+  return (
+    <div className="rounded-md border border-input p-2">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-1 text-base font-semibold">{value}</p>
+    </div>
   );
 }
 

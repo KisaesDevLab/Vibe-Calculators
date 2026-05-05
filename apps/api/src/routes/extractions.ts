@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from "express";
+import multer from "multer";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { extractionJobs, type Database } from "@vibe-calc/db";
@@ -6,6 +7,7 @@ import { extractLoanAgreement, flagLowConfidenceFields, type LlmProvider } from 
 import { problem, requirePermission } from "../middleware/auth.js";
 import { recordAuditEvent } from "../lib/audit-events.js";
 import { userOwnsExtraction } from "../lib/ownership.js";
+import { parseDocument, DocumentParseError, redactSensitive } from "../lib/document-parsing.js";
 
 /**
  * Phase 23 — extraction routes.
@@ -44,6 +46,43 @@ const listQuery = z.object({
 
 export function buildExtractionsRouter(deps: ExtractionRouteDeps): Router {
   const router = Router();
+
+  // Phase 23.6/7 — document upload. Multer holds the file in memory
+  // (≤ 10 MB; loan agreements are typically 1–3 MB). The file never
+  // touches disk; we parse to text and discard the buffer.
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 },
+  });
+
+  router.post(
+    "/upload",
+    requirePermission("ai:use"),
+    upload.single("file"),
+    async (req: Request, res: Response) => {
+      if (!req.user) return problem(res, 401, "Unauthorized", "Authentication required");
+      const file = (req as Request & { file?: Express.Multer.File }).file;
+      if (!file) return problem(res, 400, "Bad request", "Missing 'file' field");
+      const redact = String((req.body as { redact?: unknown }).redact ?? "false") === "true";
+      try {
+        const result = await parseDocument(file.buffer, file.mimetype, file.originalname);
+        const final = redact ? redactSensitive(result.text) : null;
+        res.json({
+          filename: file.originalname,
+          mimeType: file.mimetype,
+          characters: result.characters,
+          ...(result.pages !== undefined ? { pages: result.pages } : {}),
+          text: final ? final.redacted : result.text,
+          ...(final ? { redactionsApplied: final.replacements } : {}),
+        });
+      } catch (err) {
+        if (err instanceof DocumentParseError) {
+          return problem(res, 415, "Unsupported media", err.message);
+        }
+        return problem(res, 500, "Parse failed", err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
 
   router.post("/", requirePermission("ai:use"), async (req: Request, res: Response) => {
     if (!req.user) return problem(res, 401, "Unauthorized", "Authentication required");

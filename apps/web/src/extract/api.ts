@@ -38,7 +38,38 @@ export interface ExtractionRunResponse {
   flaggedFields: string[];
 }
 
+export interface UploadResponse {
+  filename: string;
+  mimeType: string;
+  characters: number;
+  pages?: number;
+  text: string;
+  redactionsApplied?: number;
+}
+
 export const extractApi = {
+  async upload(file: File, redact: boolean): Promise<UploadResponse> {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("redact", redact ? "true" : "false");
+    const res = await fetch("/api/v1/extractions/upload", {
+      method: "POST",
+      credentials: "include",
+      body: fd,
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      let detail: string;
+      try {
+        detail = (JSON.parse(text) as { detail?: string }).detail ?? text;
+      } catch {
+        detail = text || res.statusText;
+      }
+      throw new ApiError(res.status, detail);
+    }
+    return (await res.json()) as UploadResponse;
+  },
+
   async create(input: {
     sourceFilename: string;
     documentText: string;

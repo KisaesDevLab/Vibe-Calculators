@@ -109,7 +109,15 @@ export function createApp(options: ServerOptions = {}): Express {
           : {}),
       }),
     );
-    app.use("/api/v1/admin/ai", buildAdminAiRouter(options.auth.routes));
+    app.use(
+      "/api/v1/admin/ai",
+      buildAdminAiRouter({
+        ...(options.auth.routes.llmProvider
+          ? { llmProvider: options.auth.routes.llmProvider }
+          : {}),
+        db: options.auth.routes.db,
+      }),
+    );
     app.use("/api/v1/admin/firm-settings", buildFirmSettingsRouter(options.auth.routes));
   }
 
