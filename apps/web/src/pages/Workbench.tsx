@@ -1,5 +1,15 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
-import { Plus, Trash2, RotateCcw, Clipboard, Printer, ArrowDownAZ, HelpCircle } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  RotateCcw,
+  Clipboard,
+  Printer,
+  ArrowDownAZ,
+  HelpCircle,
+  Layers,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 import { ScheduleChart, scheduleToTsv, type ChartKind } from "@/components/schedule/ScheduleChart";
 import {
@@ -10,7 +20,14 @@ import {
   type DayCountConvention,
   type ScheduleResult,
 } from "@vibe-calc/calc-engine";
-import { masterToSettings, rowsToEvents, useWorkbenchStore, type GridRow } from "@/store/workbench";
+import {
+  masterToSettings,
+  rowsToEvents,
+  useWorkbenchStore,
+  type GridRow,
+  type LoanDetailsState,
+  type MasterUiState,
+} from "@/store/workbench";
 import { MoneyInput } from "@/components/inputs/MoneyInput";
 import { DateInput } from "@/components/inputs/DateInput";
 import { RateInput } from "@/components/inputs/RateInput";
@@ -92,7 +109,24 @@ export function WorkbenchPage(): JSX.Element {
   const sortByDate = useWorkbenchStore((s) => s.sortByDate);
   const loanDetails = useWorkbenchStore((s) => s.loanDetails);
   const setLoanDetail = useWorkbenchStore((s) => s.setLoanDetail);
+  const seedFromExtraction = useWorkbenchStore((s) => s.seedFromExtraction);
   const [loanDetailsOpen, setLoanDetailsOpen] = useState(false);
+  const [seriesEditorOpen, setSeriesEditorOpen] = useState(false);
+
+  // Phase 23 — pick up a seed left by the /extract page in
+  // sessionStorage. Single-shot: consumed once and cleared.
+  useEffect(() => {
+    const seed = sessionStorage.getItem("vibecalc.workbench.seed");
+    if (!seed) return;
+    sessionStorage.removeItem("vibecalc.workbench.seed");
+    try {
+      const parsed = JSON.parse(seed) as Record<string, unknown>;
+      seedFromExtraction(parsed);
+      toast.success("Workbench seeded from extraction.");
+    } catch {
+      toast.error("Could not load extracted seed.");
+    }
+  }, [seedFromExtraction]);
 
   const [error, setError] = useState<string | null>(null);
 
@@ -287,11 +321,30 @@ export function WorkbenchPage(): JSX.Element {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Cash-flow events</CardTitle>
-          <Button onClick={() => insertRowAfter(null)} size="sm">
-            <Plus className="h-4 w-4" />
-            Add row
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={() => setSeriesEditorOpen(true)} size="sm" variant="outline">
+              <Layers className="h-4 w-4" />
+              Add series
+            </Button>
+            <Button onClick={() => insertRowAfter(null)} size="sm">
+              <Plus className="h-4 w-4" />
+              Add row
+            </Button>
+          </div>
         </CardHeader>
+        {seriesEditorOpen && (
+          <SeriesEditor
+            onCancel={() => setSeriesEditorOpen(false)}
+            onInsert={(row) => {
+              const newId = insertRowAfter(null);
+              for (const [k, v] of Object.entries(row)) {
+                updateRow(newId, k as keyof typeof row, v as never);
+              }
+              setSeriesEditorOpen(false);
+              toast.success(`Inserted ${row.kind} series of ${row.count}.`);
+            }}
+          />
+        )}
         <CardContent>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -326,7 +379,13 @@ export function WorkbenchPage(): JSX.Element {
 
       {/* Result panel */}
       {schedule.result && (
-        <ResultPanel schedule={schedule.result} master={master} label={master.label} />
+        <ResultPanel
+          schedule={schedule.result}
+          master={master}
+          label={master.label}
+          rows={rows}
+          loanDetails={loanDetails}
+        />
       )}
     </main>
   );
@@ -362,10 +421,14 @@ function deriveMathTooltip(
 function ResultPanel({
   schedule,
   master,
+  rows,
+  loanDetails,
 }: {
   schedule: ScheduleResult;
-  master: { rate: string; compounding: string; dayCount: string };
+  master: MasterUiState;
   label: string;
+  rows: GridRow[];
+  loanDetails: LoanDetailsState;
 }): JSX.Element {
   const [chart, setChart] = useState<ChartKind>("stacked");
 
@@ -380,21 +443,35 @@ function ResultPanel({
 
   async function downloadPdf(): Promise<void> {
     try {
-      // Phase 13 — workbench PDF export. The engine's schedule + master
-      // settings round-trip through a TSV blob into a server-rendered
-      // amortization template. For MVP, the client just renders the
-      // schedule as a text TSV inside a CalculatorMemo PDF via the same
-      // /calculators/{kind}/pdf endpoint that the auto-form uses, with
-      // a synthetic kind. (A future tightening: add a dedicated
-      // /workbench/pdf endpoint that calls scheduleToPdf directly.)
-      // For now, fall back to print → save as PDF.
-      window.print();
+      const res = await fetch("/api/v1/workbench/pdf", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ master, rows, loanDetails }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        let detail = `HTTP ${res.status}`;
+        try {
+          detail = (JSON.parse(text) as { detail?: string }).detail ?? detail;
+        } catch {
+          // fall through
+        }
+        throw new Error(detail);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${slug(master.label)}-${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
     }
   }
-  // Keep downloadPdf assigned to satisfy the linter; bound to the button below.
-  void downloadPdf;
 
   return (
     <Card className="print:shadow-none print:border-0">
@@ -405,9 +482,9 @@ function ResultPanel({
             <Clipboard className="h-4 w-4" />
             Copy TSV
           </Button>
-          <Button variant="outline" size="sm" onClick={() => window.print()}>
+          <Button variant="outline" size="sm" onClick={() => void downloadPdf()}>
             <Printer className="h-4 w-4" />
-            Print / PDF
+            Download PDF
           </Button>
           <span
             className="ml-2 inline-flex items-center gap-1 text-xs text-muted-foreground"
@@ -519,6 +596,120 @@ function ChartTab({
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * Phase 11.3 / 11.17 — Series editor.
+ *
+ * MVP: a kind / amount / count / interval / start-date form that
+ * inserts a single recurring row. The Phase 7 cash-flow engine's
+ * event normalizer expands `(kind=payment, amount=$609, count=24,
+ * interval=monthly)` into 24 atomic per-period entries at compute
+ * time. Stepped-amount / stepped-percentage / skip-pattern series
+ * (Phase 7.11 §11.3 advanced cases) are deferred to a follow-up;
+ * the present-form maps to the most-asked workflow ("set up a
+ * 360-month payment series").
+ */
+function SeriesEditor({
+  onCancel,
+  onInsert,
+}: {
+  onCancel: () => void;
+  onInsert: (row: Partial<GridRow>) => void;
+}): JSX.Element {
+  const [kind, setKind] = useState<CashFlowEventKind>("payment");
+  const [date, setDate] = useState("");
+  const [amount, setAmount] = useState("");
+  const [count, setCount] = useState("12");
+  const [interval, setInterval] = useState<CompoundingInterval>("monthly");
+  const [memo, setMemo] = useState("");
+  return (
+    <CardContent className="border-y border-border bg-muted/30">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-sm font-semibold">Insert series</h3>
+        <Button variant="ghost" size="sm" onClick={onCancel} aria-label="Close">
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
+        <Field label="Kind">
+          <select
+            value={kind}
+            onChange={(e) => setKind(e.target.value as CashFlowEventKind)}
+            className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+          >
+            {KIND_OPTIONS.map((k) => (
+              <option key={k} value={k}>
+                {k}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Start date">
+          <DateInput value={date} onChange={setDate} />
+        </Field>
+        <Field label="Amount per period">
+          <MoneyInput value={amount} onChange={setAmount} symbol="" />
+        </Field>
+        <Field label="Number of periods">
+          <Input
+            type="number"
+            min={1}
+            value={count}
+            onChange={(e) => setCount(e.target.value)}
+            className="text-right"
+          />
+        </Field>
+        <Field label="Interval">
+          <select
+            value={interval}
+            onChange={(e) => setInterval(e.target.value as CompoundingInterval)}
+            className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+          >
+            {INTERVAL_OPTIONS.filter((x) => x !== "").map((iv) => (
+              <option key={iv} value={iv}>
+                {iv}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Memo (optional)">
+          <Input value={memo} onChange={(e) => setMemo(e.target.value)} />
+        </Field>
+      </div>
+      <div className="mt-3 flex justify-end gap-2">
+        <Button variant="outline" size="sm" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button
+          size="sm"
+          disabled={!date || !amount || !count || Number(count) < 1}
+          onClick={() =>
+            onInsert({
+              date,
+              kind,
+              amount,
+              count,
+              interval,
+              memo,
+            })
+          }
+        >
+          Insert
+        </Button>
+      </div>
+    </CardContent>
+  );
+}
+
+function slug(s: string): string {
+  return (
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60) || "workbench"
   );
 }
 

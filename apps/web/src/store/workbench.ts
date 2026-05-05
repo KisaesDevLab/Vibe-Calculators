@@ -85,6 +85,39 @@ interface WorkbenchState {
   /** Sort the grid rows in-place by ISO date ascending. Empty dates sink to the bottom. */
   sortByDate: () => void;
   setLoanDetail: <K extends keyof LoanDetailsState>(key: K, value: LoanDetailsState[K]) => void;
+  /**
+   * Phase 23 — seed the workbench from a Phase 23 loan-extraction
+   * result. Maps the LoanExtraction shape (as JSON) into:
+   *   - master.rate           ← interestRate
+   *   - master.compounding    ← compounding (normalized to enum)
+   *   - first row (loan)      ← firstPaymentDate, principal
+   *   - second row (payments) ← firstPaymentDate, paymentAmount,
+   *                             paymentFrequency → interval, termMonths
+   *                             → count
+   *   - loanDetails           ← borrower / lender / notes
+   * Unknown / null fields fall through to defaults; the operator
+   * fills the gaps in the grid.
+   */
+  seedFromExtraction: (raw: Record<string, unknown>) => void;
+}
+
+/** Convert a free-form compounding string ("monthly", "Annually") to the enum we accept. */
+function normalizeCompounding(s: unknown): CompoundingInterval {
+  if (typeof s !== "string") return "monthly";
+  const lower = s.toLowerCase().trim();
+  if (lower.includes("annual") && !lower.includes("semi")) return "annual";
+  if (lower.includes("semi")) return "semi-annual";
+  if (lower.includes("quarter")) return "quarterly";
+  if (lower.includes("biweek")) return "biweekly";
+  if (lower.includes("weekly") && !lower.includes("bi")) return "weekly";
+  if (lower.includes("daily")) return "daily";
+  return "monthly";
+}
+
+/** Convert a payment-frequency string ("monthly", "every 2 weeks") to a row Interval. */
+function normalizeFrequency(s: unknown): CompoundingInterval | "" {
+  if (typeof s !== "string" || s.trim() === "") return "";
+  return normalizeCompounding(s);
 }
 
 let nextId = 1;
@@ -170,6 +203,63 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   loadFromEvents: (rows, master) => set({ rows, master, selectedRowId: null }),
 
   setLoanDetail: (key, value) => set((s) => ({ loanDetails: { ...s.loanDetails, [key]: value } })),
+
+  seedFromExtraction: (raw) =>
+    set((s) => {
+      const principal = typeof raw.principal === "number" ? raw.principal : null;
+      const interestRate = typeof raw.interestRate === "number" ? raw.interestRate : null;
+      const termMonths = typeof raw.termMonths === "number" ? raw.termMonths : null;
+      const paymentAmount = typeof raw.paymentAmount === "number" ? raw.paymentAmount : null;
+      const firstPayment = typeof raw.firstPaymentDate === "string" ? raw.firstPaymentDate : "";
+      const compounding = normalizeCompounding(raw.compounding);
+      const interval = normalizeFrequency(raw.paymentFrequency) || compounding;
+      const borrower = (raw.borrower as { name?: unknown } | undefined)?.name;
+      const lender = (raw.lender as { name?: unknown } | undefined)?.name;
+      const notesField = typeof raw.notes === "string" ? raw.notes : "";
+
+      const newMaster: MasterUiState = {
+        ...s.master,
+        ...(interestRate !== null ? { rate: String(interestRate) } : {}),
+        compounding,
+        label: borrower
+          ? `Loan to ${String(borrower)}`
+          : `Extracted ${new Date().toISOString().slice(0, 10)}`,
+      };
+
+      const rows: GridRow[] = [];
+      if (principal !== null && firstPayment) {
+        rows.push({
+          ...emptyRow(),
+          date: firstPayment,
+          kind: "loan",
+          amount: String(principal),
+          memo: "Extracted from agreement",
+        });
+      }
+      if (paymentAmount !== null && termMonths && firstPayment) {
+        rows.push({
+          ...emptyRow(),
+          date: firstPayment,
+          kind: "payment",
+          amount: String(paymentAmount),
+          count: String(termMonths),
+          interval,
+          memo: "Extracted payment series",
+        });
+      }
+      if (rows.length === 0) rows.push(emptyRow());
+
+      return {
+        master: newMaster,
+        rows,
+        loanDetails: {
+          ...s.loanDetails,
+          ...(typeof borrower === "string" ? { borrowerName: borrower } : {}),
+          ...(typeof lender === "string" ? { lenderName: lender } : {}),
+          ...(notesField ? { notes: notesField } : {}),
+        },
+      };
+    }),
 
   sortByDate: () =>
     set((s) => ({
