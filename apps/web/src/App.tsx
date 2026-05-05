@@ -71,6 +71,7 @@ const AdminBackupsPage = lazy(() =>
 const AdminTaxTablesPage = lazy(() =>
   import("@/pages/AdminTaxTables").then((m) => ({ default: m.AdminTaxTablesPage })),
 );
+const HelpPage = lazy(() => import("@/pages/Help").then((m) => ({ default: m.HelpPage })));
 
 // Phase 4.7 — TanStack Query defaults per CLAUDE.md.
 const queryClient = new QueryClient({
@@ -373,6 +374,18 @@ export function App(): JSX.Element {
                         </Suspense>
                       </ShelledRoute>
                     </RequirePerm>
+                  }
+                />
+                <Route
+                  path="/help"
+                  element={
+                    <RequireAuth>
+                      <ShelledRoute>
+                        <Suspense fallback={<RouteSpinner />}>
+                          <HelpPage />
+                        </Suspense>
+                      </ShelledRoute>
+                    </RequireAuth>
                   }
                 />
                 <Route

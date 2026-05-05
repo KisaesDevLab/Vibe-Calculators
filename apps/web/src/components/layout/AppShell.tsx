@@ -15,6 +15,7 @@ import {
   ChevronDown,
   LogOut,
   User,
+  HelpCircle,
 } from "lucide-react";
 import { useAuth } from "@/auth/AuthContext";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -63,6 +64,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/admin/ai-prompts", label: "AI prompts", icon: Settings, permission: "ai:configure" },
   { to: "/admin/backups", label: "Backups", icon: Settings, permission: "backup:create" },
   { to: "/admin/tax-tables", label: "Tax tables", icon: Settings, permission: "settings:read" },
+  { to: "/help", label: "Help", icon: HelpCircle },
 ];
 
 export function AppShell({ children }: { children: ReactNode }): JSX.Element {
@@ -150,6 +152,14 @@ export function AppShell({ children }: { children: ReactNode }): JSX.Element {
             </kbd>
           </Button>
           <div className="flex-1" />
+          <NavLink
+            to="/help"
+            className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            aria-label="Help"
+            title="Help (press ?)"
+          >
+            <HelpCircle className="h-4 w-4" />
+          </NavLink>
           <ThemeToggle />
           <UserMenu name={user?.name ?? "—"} />
         </header>

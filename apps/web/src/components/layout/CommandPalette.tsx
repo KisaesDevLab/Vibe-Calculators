@@ -25,6 +25,37 @@ interface PaletteAction {
 }
 
 const ACTIONS: PaletteAction[] = [
+  { id: "go.help", title: "Go: Help (knowledge base)", hint: "/help", run: (n) => n("/help") },
+  {
+    id: "help.workbench",
+    title: "Help: TVM workbench",
+    hint: "/help?t=workbench",
+    run: (n) => n("/help?t=workbench"),
+  },
+  {
+    id: "help.calculators",
+    title: "Help: Tax calculators",
+    hint: "/help?t=calculators",
+    run: (n) => n("/help?t=calculators"),
+  },
+  {
+    id: "help.exports",
+    title: "Help: Reports & exports",
+    hint: "/help?t=exports",
+    run: (n) => n("/help?t=exports"),
+  },
+  {
+    id: "help.extraction",
+    title: "Help: AI extraction",
+    hint: "/help?t=extraction",
+    run: (n) => n("/help?t=extraction"),
+  },
+  {
+    id: "help.shortcuts",
+    title: "Help: Keyboard shortcuts",
+    hint: "/help?t=shortcuts",
+    run: (n) => n("/help?t=shortcuts"),
+  },
   { id: "go.health", title: "Go: Health", hint: "/health", run: (n) => n("/health") },
   {
     id: "go.calculators",
@@ -264,6 +295,9 @@ export function useGlobalShortcuts(): void {
           r: "/reports",
           a: "/admin/users",
           h: "/health",
+          q: "/queue",
+          x: "/exports",
+          ",": "/me",
         };
         const dest = map[e.key.toLowerCase()];
         if (dest) {
@@ -271,6 +305,14 @@ export function useGlobalShortcuts(): void {
           navigate(dest);
         }
         clearPrefix();
+        return;
+      }
+      // `?` opens contextual help based on the current path.
+      if (e.key === "?" && !e.shiftKey === false && !inField) {
+        e.preventDefault();
+        const path = window.location.pathname;
+        const topic = pathToHelpTopic(path);
+        navigate(topic ? `/help?t=${topic}` : "/help");
         return;
       }
       if ((e.key === "g" || e.key === "G") && !e.ctrlKey && !e.metaKey) {
@@ -284,4 +326,25 @@ export function useGlobalShortcuts(): void {
       clearPrefix();
     };
   }, [navigate]);
+}
+
+/**
+ * Map the current pathname to the most relevant help topic ID. Used
+ * by the `?` shortcut so a user pressing `?` on /workbench lands on
+ * the workbench guide, not the help index.
+ */
+function pathToHelpTopic(path: string): string | null {
+  if (path.startsWith("/calculators/tvm-workbench")) return "workbench";
+  if (path.startsWith("/calculators")) return "calculators";
+  if (path.startsWith("/extract")) return "extraction";
+  if (path.startsWith("/exports")) return "exports";
+  if (path.startsWith("/schedules")) return "schedules";
+  if (path.startsWith("/me")) return "profile";
+  if (path.startsWith("/admin/users")) return "admin-users";
+  if (path.startsWith("/admin/firm-settings")) return "admin-firm";
+  if (path.startsWith("/admin/backups")) return "admin-backups";
+  if (path.startsWith("/admin/ai")) return "admin-ai";
+  if (path.startsWith("/admin/tax-tables")) return "admin-tax-tables";
+  if (path.startsWith("/admin/audit")) return "admin-audit";
+  return null;
 }
