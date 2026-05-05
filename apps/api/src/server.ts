@@ -100,7 +100,15 @@ export function createApp(options: ServerOptions = {}): Express {
     app.use("/api/v1/queue", buildQueueRouter(options.auth.routes));
     app.use("/api/v1/bulk", buildBulkRouter(options.auth.routes));
     app.use("/api/v1/calculators", buildCalculatorsRouter(options.auth.routes));
-    app.use("/api/v1/workbench", buildWorkbenchRouter({ db: options.auth.routes.db }));
+    app.use(
+      "/api/v1/workbench",
+      buildWorkbenchRouter({
+        db: options.auth.routes.db,
+        ...(options.auth.routes.emailProvider
+          ? { emailProvider: options.auth.routes.emailProvider }
+          : {}),
+      }),
+    );
     app.use("/api/v1/admin/ai", buildAdminAiRouter(options.auth.routes));
     app.use("/api/v1/admin/firm-settings", buildFirmSettingsRouter(options.auth.routes));
   }

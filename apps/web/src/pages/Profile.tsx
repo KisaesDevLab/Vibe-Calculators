@@ -242,6 +242,9 @@ export function ProfilePage(): JSX.Element {
         )}
       </section>
 
+      {/* Email digest preference (Phase 22.7) */}
+      <PreferencesSection />
+
       {/* Sessions */}
       <section className="mt-6 rounded-md border border-border bg-card p-4">
         <h2 className="text-sm font-medium">Active sessions</h2>
@@ -273,5 +276,68 @@ export function ProfilePage(): JSX.Element {
         )}
       </section>
     </main>
+  );
+}
+
+function PreferencesSection(): JSX.Element {
+  const queryClient = useQueryClient();
+  const prefs = useQuery({
+    queryKey: ["me", "preferences"],
+    queryFn: () => call<{ emailDigest: "immediate" | "daily" | "off" }>("/api/v1/me/preferences"),
+  });
+  const [error, setError] = useState<string | null>(null);
+  const [ok, setOk] = useState(false);
+  const update = useMutation({
+    mutationFn: (emailDigest: "immediate" | "daily" | "off") =>
+      call<{ ok: true }>("/api/v1/me/preferences", {
+        method: "PUT",
+        body: JSON.stringify({ emailDigest }),
+      }),
+    onSuccess: () => {
+      setOk(true);
+      setError(null);
+      void queryClient.invalidateQueries({ queryKey: ["me", "preferences"] });
+      setTimeout(() => setOk(false), 1500);
+    },
+    onError: (err: unknown) => {
+      setError(err instanceof Error ? err.message : String(err));
+    },
+  });
+
+  return (
+    <section className="mt-6 rounded-md border border-border bg-card p-4">
+      <h2 className="text-sm font-medium">Email preferences</h2>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Notification cadence for in-app activity emails. Account-recovery and magic-link emails
+        always send regardless of this setting.
+      </p>
+      {prefs.isLoading && <p className="mt-2 text-sm text-muted-foreground">Loading…</p>}
+      {prefs.data && (
+        <fieldset className="mt-3 space-y-2 text-sm">
+          {(["immediate", "daily", "off"] as const).map((option) => (
+            <label key={option} className="flex items-start gap-2">
+              <input
+                type="radio"
+                name="emailDigest"
+                checked={prefs.data.emailDigest === option}
+                onChange={() => update.mutate(option)}
+                disabled={update.isPending}
+                className="mt-1"
+              />
+              <span>
+                <span className="font-medium capitalize">{option}</span>
+                <span className="ml-2 text-xs text-muted-foreground">
+                  {option === "immediate" && "every event sent right away"}
+                  {option === "daily" && "one summary email at 7am firm-time"}
+                  {option === "off" && "in-app only — no notification emails"}
+                </span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
+      )}
+      {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
+      {ok && <p className="mt-2 text-xs text-emerald-600">Saved.</p>}
+    </section>
   );
 }

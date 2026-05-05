@@ -35,9 +35,41 @@ const totpSetupSchema = z.object({ password: z.string().min(1) });
 const totpEnableSchema = z.object({ code: z.string().regex(/^\d{6}$/) });
 const totpDisableSchema = z.object({ password: z.string().min(1) });
 
+const preferencesSchema = z.object({
+  emailDigest: z.enum(["immediate", "daily", "off"]).optional(),
+});
+
 export function buildMeRouter(deps: MeRouteDeps): Router {
   const router = Router();
   router.use(requireAuth);
+
+  // Phase 22.7 — read-current and patch user preferences.
+  router.get("/preferences", async (req: Request, res: Response) => {
+    const user = req.user!;
+    const [row] = await deps.db.select().from(users).where(eq(users.id, user.id)).limit(1);
+    if (!row) return problem(res, 404, "Not found", "User row missing");
+    res.json({ emailDigest: row.emailDigest });
+  });
+
+  router.put("/preferences", async (req: Request, res: Response) => {
+    const user = req.user!;
+    const parsed = preferencesSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return problem(res, 400, "Bad request", "Invalid body", {
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+    }
+    const patch: Record<string, unknown> = {};
+    if (parsed.data.emailDigest !== undefined) patch.emailDigest = parsed.data.emailDigest;
+    if (Object.keys(patch).length === 0) {
+      return res.json({ ok: true, unchanged: true });
+    }
+    const [row] = await deps.db.update(users).set(patch).where(eq(users.id, user.id)).returning();
+    res.json({ ok: true, emailDigest: row?.emailDigest });
+  });
 
   router.post("/password", async (req: Request, res: Response) => {
     const parsed = changePasswordSchema.safeParse(req.body);

@@ -55,6 +55,15 @@ export const users = pgTable(
      * single-table.
      */
     totpLastCounter: bigint("totp_last_counter", { mode: "number" }),
+    /**
+     * Phase 22.7 — email digest preference.
+     *   immediate    - send every notification as a standalone message
+     *                  (default)
+     *   daily        - batch overnight; ship one summary at 7am firm-tz
+     *   off          - never email (in-app only). Account-recovery and
+     *                  magic-link emails ignore this setting.
+     */
+    emailDigest: text("email_digest").notNull().default("immediate"),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
   },
   (t) => ({

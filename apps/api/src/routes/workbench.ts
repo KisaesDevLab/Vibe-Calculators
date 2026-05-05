@@ -10,6 +10,7 @@ import {
   type DayCountConvention,
 } from "@vibe-calc/calc-engine";
 import type { Database } from "@vibe-calc/db";
+import type { EmailProvider } from "@vibe-calc/email";
 import { scheduleToPdf, scheduleToCsv, scheduleToXlsx, scheduleToDocx } from "@vibe-calc/pdf";
 import { problem } from "../middleware/auth.js";
 import { loadFirmSettings, composeBrandedFooter } from "../lib/firm-settings.js";
@@ -103,9 +104,14 @@ const bodySchema = z.object({
  * Phase 13.3 — the export endpoints now read firm-settings to brand
  * the PDF / DOCX headers and footers. Pass the same Drizzle handle
  * the rest of the auth-aware routes use.
+ *
+ * Phase 13.9 — `emailProvider` powers the email-this-PDF endpoint.
+ * Optional; the route returns 503 with a clear message when not
+ * configured.
  */
 export interface WorkbenchRouteDeps {
   db?: Database;
+  emailProvider?: EmailProvider | undefined;
 }
 
 /** Parse + validate the workbench body and run the engine. Returns
@@ -191,6 +197,7 @@ async function buildScheduleFromBody(body: unknown): Promise<ScheduleBuildResult
 export function buildWorkbenchRouter(deps: WorkbenchRouteDeps = {}): Router {
   const router = Router();
   const db = deps.db;
+  const emailProvider = deps.emailProvider;
 
   router.post("/pdf", async (req: Request, res: Response) => {
     if (!req.user) return problem(res, 401, "Unauthorized", "Authentication required");
@@ -284,6 +291,98 @@ export function buildWorkbenchRouter(deps: WorkbenchRouteDeps = {}): Router {
         .slice(0, 10)}.pdf"`,
     );
     res.send(buf);
+  });
+
+  // Phase 13.9 — email this PDF.
+  router.post("/email-pdf", async (req: Request, res: Response) => {
+    if (!req.user) return problem(res, 401, "Unauthorized", "Authentication required");
+    if (!emailProvider) {
+      return problem(
+        res,
+        503,
+        "Email provider not configured",
+        "No SMTP / Postmark / EmailIt provider available. Set provider env in .env and restart.",
+      );
+    }
+    const recipientSchema = z.object({
+      to: z.string().email(),
+      subject: z.string().min(1).max(200).optional(),
+      message: z.string().max(2000).optional(),
+    });
+    const recipientResult = recipientSchema.safeParse(req.body?.recipient);
+    if (!recipientResult.success) {
+      return problem(res, 400, "Bad request", "Invalid recipient", {
+        issues: recipientResult.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+    }
+    const result = await buildScheduleFromBody(req.body);
+    if (!result.ok) {
+      return problem(
+        res,
+        result.status,
+        result.title,
+        result.detail,
+        result.issues ? { issues: result.issues } : undefined,
+      );
+    }
+    const firm = db ? await loadFirmSettings(db) : null;
+    const preparedOn = result.data.loanDetails.preparedOn
+      ? new Date(result.data.loanDetails.preparedOn)
+      : new Date();
+    let buf: Buffer;
+    try {
+      const operatorFooter = composeFooter(result.data.loanDetails);
+      const brandedFooter = composeBrandedFooter(firm, operatorFooter);
+      buf = await scheduleToPdf(result.schedule, {
+        calculationLabel: result.data.master.label,
+        preparedBy: result.data.loanDetails.preparedBy ?? req.user.name,
+        preparedOn,
+        ...(brandedFooter ? { firmFooter: brandedFooter } : {}),
+        ...(firm?.firmName ? { firmName: firm.firmName } : {}),
+      });
+    } catch (err) {
+      return problem(
+        res,
+        500,
+        "PDF render failed",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+    const filename = `${slugify(result.data.master.label || "schedule")}-${preparedOn
+      .toISOString()
+      .slice(0, 10)}.pdf`;
+    try {
+      await emailProvider.send({
+        to: recipientResult.data.to,
+        subject:
+          recipientResult.data.subject ??
+          `${firm?.firmName ?? "Vibe Calculators"} — ${result.data.master.label || "Schedule"}`,
+        text:
+          (recipientResult.data.message ?? "") +
+          (recipientResult.data.message ? "\n\n" : "") +
+          `Schedule attached: ${filename}\n` +
+          `Prepared by: ${result.data.loanDetails.preparedBy ?? req.user.name}\n` +
+          `On: ${preparedOn.toISOString().slice(0, 10)}`,
+        attachments: [
+          {
+            filename,
+            contentType: "application/pdf",
+            content: buf.toString("base64"),
+          },
+        ],
+      });
+    } catch (err) {
+      return problem(
+        res,
+        502,
+        "Email delivery failed",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+    res.json({ ok: true, to: recipientResult.data.to, filename });
   });
 
   router.post("/csv", async (req: Request, res: Response) => {

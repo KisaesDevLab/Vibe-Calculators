@@ -17,6 +17,7 @@ describe("users schema", () => {
         "archivedAt",
         "createdAt",
         "email",
+        "emailDigest",
         "id",
         "lastLoginAt",
         "name",

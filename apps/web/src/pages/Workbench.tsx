@@ -10,6 +10,7 @@ import {
   Layers,
   X,
   Save,
+  Send,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ScheduleChart, scheduleToTsv, type ChartKind } from "@/components/schedule/ScheduleChart";
@@ -561,6 +562,41 @@ function ResultPanel({
     }
   }
 
+  async function emailPdf(): Promise<void> {
+    const to = window.prompt("Send the schedule PDF to (email address):", "");
+    if (!to) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+      toast.error("Not a valid email address.");
+      return;
+    }
+    try {
+      const res = await fetch("/api/v1/workbench/email-pdf", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          master,
+          rows,
+          loanDetails,
+          recipient: { to },
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        let detail = `HTTP ${res.status}`;
+        try {
+          detail = (JSON.parse(text) as { detail?: string }).detail ?? detail;
+        } catch {
+          // fall through
+        }
+        throw new Error(detail);
+      }
+      toast.success(`Sent to ${to}.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function downloadFormat(format: "csv" | "xlsx" | "docx", _mime: string): Promise<void> {
     try {
       const res = await fetch(`/api/v1/workbench/${format}`, {
@@ -668,6 +704,10 @@ function ResultPanel({
             }
           >
             DOCX
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => void emailPdf()}>
+            <Send className="h-4 w-4" />
+            Email
           </Button>
           <span
             className="ml-2 inline-flex items-center gap-1 text-xs text-muted-foreground"

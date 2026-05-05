@@ -99,6 +99,85 @@ EOF
     fi
     echo "backup written to ${out}"
 
+# Phase 25.7 — encrypted backup with retention rotation.
+# Wraps `just backup` with `age` symmetric encryption (passphrase
+# from VIBE_BACKUP_PASSPHRASE in .env, or prompted) and prunes old
+# backup directories on a 7-daily / 4-weekly / 12-monthly schedule.
+# Requires `age` (https://age-encryption.org) on PATH.
+backup-encrypted:
+    #!/usr/bin/env sh
+    set -e
+    if ! command -v age >/dev/null 2>&1; then
+        echo "age not found on PATH — install age-encryption.org first" >&2
+        exit 1
+    fi
+    just backup
+    LATEST=$(ls -1d backups/*/ 2>/dev/null | sort | tail -1)
+    if [ -z "${LATEST}" ]; then
+        echo "no backup directory found after just backup" >&2; exit 1
+    fi
+    if [ -z "${VIBE_BACKUP_PASSPHRASE:-}" ]; then
+        printf "Encryption passphrase: " >&2
+        stty -echo
+        read -r VIBE_BACKUP_PASSPHRASE
+        stty echo
+        echo "" >&2
+    fi
+    OUT="${LATEST%/}.tar.age"
+    tar -C "$(dirname ${LATEST%/})" -cf - "$(basename ${LATEST%/})" \
+        | age -p -o "${OUT}"
+    echo "encrypted: ${OUT}"
+    # Retention: keep N daily / weekly / monthly archives.
+    DAILY=${VIBE_BACKUP_DAILY:-7}
+    WEEKLY=${VIBE_BACKUP_WEEKLY:-4}
+    MONTHLY=${VIBE_BACKUP_MONTHLY:-12}
+    cd backups || exit 0
+    # Daily: keep most recent N regardless of weekday/month.
+    ls -1 *.tar.age 2>/dev/null | sort -r | tail -n +$((DAILY + 1)) | while read f; do
+        # Only delete if also outside the weekly/monthly windows.
+        # Conservative: only delete daily-aged archives (>N days) that
+        # aren't the first backup of their week or month.
+        DAY=$(echo "$f" | sed -n 's/^\([0-9]\{8\}\)T.*/\1/p')
+        [ -z "$DAY" ] && continue
+        WD=$(date -d "${DAY:0:4}-${DAY:4:2}-${DAY:6:2}" +%w 2>/dev/null || echo 0)
+        DOM=$(echo "$DAY" | tail -c 3)
+        # Keep first-of-week (sunday=0) for WEEKLY count, first-of-month for MONTHLY.
+        if [ "$WD" = "0" ]; then continue; fi
+        if [ "$DOM" = "01" ]; then continue; fi
+        echo "  prune ${f}"
+        rm -f "$f"
+    done
+    # Weekly: keep most recent WEEKLY sunday-archives.
+    ls -1 *.tar.age 2>/dev/null | while read f; do
+        DAY=$(echo "$f" | sed -n 's/^\([0-9]\{8\}\)T.*/\1/p')
+        [ -z "$DAY" ] && continue
+        WD=$(date -d "${DAY:0:4}-${DAY:4:2}-${DAY:6:2}" +%w 2>/dev/null || echo 0)
+        [ "$WD" = "0" ] && echo "$f"
+    done | sort -r | tail -n +$((WEEKLY + 1)) | while read f; do
+        # Don't delete first-of-month even if rolling out of weekly window.
+        DOM=$(echo "$f" | sed -n 's/^[0-9]\{6\}\([0-9]\{2\}\)T.*/\1/p')
+        [ "$DOM" = "01" ] && continue
+        echo "  prune ${f}"
+        rm -f "$f"
+    done
+    # Monthly: keep most recent MONTHLY first-of-month archives.
+    ls -1 *.tar.age 2>/dev/null | while read f; do
+        DOM=$(echo "$f" | sed -n 's/^[0-9]\{6\}\([0-9]\{2\}\)T.*/\1/p')
+        [ "$DOM" = "01" ] && echo "$f"
+    done | sort -r | tail -n +$((MONTHLY + 1)) | while read f; do
+        echo "  prune ${f}"
+        rm -f "$f"
+    done
+    echo "retention pass complete (daily=${DAILY} weekly=${WEEKLY} monthly=${MONTHLY})"
+
+# Decrypt + extract a previously-encrypted backup. Pass the .tar.age
+# path. Outputs to backups/<timestamp>/ ready for `just restore`.
+backup-decrypt PATH:
+    #!/usr/bin/env sh
+    set -e
+    age -d "{{PATH}}" | tar -C "$(dirname {{PATH}})" -xf -
+    echo "extracted; run just restore <decrypted-dir>"
+
 # Restore from a backup directory. Phase 25.3 — verifies checksums
 # (when sha256sum is available) before applying.
 restore PATH:

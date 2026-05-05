@@ -99,6 +99,13 @@
       "when": 1778443200000,
       "tag": "0013_firm_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1778529600000,
+      "tag": "0014_email_digest",
+      "breakpoints": true
     }
   ]
 }

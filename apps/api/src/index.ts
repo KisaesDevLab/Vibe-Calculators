@@ -17,6 +17,7 @@ const { sealerFrom } = await import("./lib/totp.js");
 const { createRateLimiter, redisStore } = await import("./lib/rate-limit.js");
 const { Redis } = await import("ioredis");
 const { createEmailProviderFromEnv } = await import("@vibe-calc/email");
+type EmailProviderType = Awaited<ReturnType<typeof createEmailProviderFromEnv>>;
 const { runDeepHealth } = await import("./lib/deep-health.js");
 
 // Side-effect imports: importing @vibe-calc/tax-engine triggers each
@@ -57,10 +58,7 @@ const rateLimiter = createRateLimiter(redisStore(rateLimitRedis));
 // log the magic-link details so the operator can copy the URL by
 // hand. In production this surfaces as a warning at boot, and the
 // firm operator wires real credentials in their .env.
-type EmailLikeProvider = {
-  send: (input: { to: string; subject: string; text: string }) => Promise<unknown>;
-};
-let emailProvider: EmailLikeProvider | null = null;
+let emailProvider: EmailProviderType | null = null;
 try {
   emailProvider = createEmailProviderFromEnv(process.env);
   logger.info({ provider: process.env.VIBE_EMAIL_PROVIDER ?? "smtp" }, "email provider ready");
@@ -127,7 +125,7 @@ const emitMagicLinkEmail = async (input: {
 // Number of migration tags shipped with this release; bumped each
 // time a new file lands in packages/db/drizzle/. The deep-health
 // schema-version probe asserts the applied count matches.
-const EXPECTED_MIGRATIONS = 14; // 0000..0013
+const EXPECTED_MIGRATIONS = 15; // 0000..0014
 
 const app = createApp({
   health: {
@@ -152,6 +150,7 @@ const app = createApp({
       kms,
       emitMagicLinkEmail,
       llmProvider,
+      ...(emailProvider ? { emailProvider } : {}),
     },
   },
 });
