@@ -60,6 +60,8 @@ interface WorkbenchState {
   selectRow: (rowId: string | null) => void;
   reset: () => void;
   loadFromEvents: (rows: GridRow[], master: MasterUiState) => void;
+  /** Sort the grid rows in-place by ISO date ascending. Empty dates sink to the bottom. */
+  sortByDate: () => void;
 }
 
 let nextId = 1;
@@ -124,6 +126,32 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   reset: () => set({ master: { ...DEFAULT_MASTER }, rows: [emptyRow()] }),
 
   loadFromEvents: (rows, master) => set({ rows, master, selectedRowId: null }),
+
+  sortByDate: () =>
+    set((s) => ({
+      // Phase 11.17 — Sort by Date ascending. Tie-break: Loan first, then
+      // Rate Change, then balance-touching events, then memo. Empty
+      // dates sink to the bottom so the user notices them.
+      rows: [...s.rows].sort((a, b) => {
+        if (!a.date && !b.date) return 0;
+        if (!a.date) return 1;
+        if (!b.date) return -1;
+        if (a.date !== b.date) return a.date.localeCompare(b.date);
+        const order: Record<string, number> = {
+          loan: 0,
+          rate_change: 1,
+          deposit: 2,
+          payment: 2,
+          withdrawal: 2,
+          balloon: 2,
+          prepayment: 2,
+          interest_only: 2,
+          stepped_amount: 2,
+          memo: 3,
+        };
+        return (order[a.kind] ?? 9) - (order[b.kind] ?? 9);
+      }),
+    })),
 }));
 
 // ---------------------------------------------------------------------

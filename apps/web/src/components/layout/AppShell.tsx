@@ -42,7 +42,10 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/clients", label: "Clients", icon: Users, permission: "client:read" },
   { to: "/engagements", label: "Engagements", icon: FolderOpen, permission: "engagement:read" },
   { to: "/reports", label: "Reports", icon: FileText, permission: "export:download" },
-  { to: "/admin/users", label: "Admin", icon: Settings, permission: "user:list" },
+  { to: "/admin/users", label: "Users", icon: Settings, permission: "user:list" },
+  { to: "/admin/api-keys", label: "API keys", icon: Settings, permission: "user:list" },
+  { to: "/admin/webhooks", label: "Webhooks", icon: Settings, permission: "user:list" },
+  { to: "/admin/audit", label: "Audit log", icon: Settings, permission: "audit:read" },
 ];
 
 export function AppShell({ children }: { children: ReactNode }): JSX.Element {

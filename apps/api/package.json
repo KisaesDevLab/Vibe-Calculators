@@ -19,7 +19,9 @@
     "@vibe-calc/db": "workspace:*",
     "@vibe-calc/email": "workspace:*",
     "@vibe-calc/llm": "workspace:*",
+    "@vibe-calc/pdf": "workspace:*",
     "@vibe-calc/shared-types": "workspace:*",
+    "@vibe-calc/tax-engine": "workspace:*",
     "@zxcvbn-ts/core": "3.0.4",
     "cookie-parser": "1.4.7",
     "drizzle-orm": "0.36.4",
@@ -31,7 +33,8 @@
     "pg": "8.13.1",
     "pino": "9.5.0",
     "qrcode": "1.5.4",
-    "zod": "3.23.8"
+    "zod": "3.23.8",
+    "zod-to-json-schema": "3.23.5"
   },
   "devDependencies": {
     "@testcontainers/postgresql": "10.13.2",

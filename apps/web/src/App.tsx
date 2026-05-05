@@ -21,8 +21,23 @@ const ProfilePage = lazy(() => import("@/pages/Profile").then((m) => ({ default:
 const AdminUsersPage = lazy(() =>
   import("@/pages/AdminUsers").then((m) => ({ default: m.AdminUsersPage })),
 );
+const AdminApiKeysPage = lazy(() =>
+  import("@/pages/AdminApiKeys").then((m) => ({ default: m.AdminApiKeysPage })),
+);
+const AdminWebhooksPage = lazy(() =>
+  import("@/pages/AdminWebhooks").then((m) => ({ default: m.AdminWebhooksPage })),
+);
+const AdminAuditLogPage = lazy(() =>
+  import("@/pages/AdminAuditLog").then((m) => ({ default: m.AdminAuditLogPage })),
+);
 const WorkbenchPage = lazy(() =>
   import("@/pages/Workbench").then((m) => ({ default: m.WorkbenchPage })),
+);
+const CalculatorsPage = lazy(() =>
+  import("@/pages/Calculators").then((m) => ({ default: m.CalculatorsPage })),
+);
+const CalculatorRunnerPage = lazy(() =>
+  import("@/pages/CalculatorRunner").then((m) => ({ default: m.CalculatorRunnerPage })),
 );
 const ClientsPage = lazy(() => import("@/pages/Clients").then((m) => ({ default: m.ClientsPage })));
 const ClientDetailPage = lazy(() =>
@@ -93,7 +108,31 @@ export function App(): JSX.Element {
                     <RequireAuth>
                       <ShelledRoute>
                         <Suspense fallback={<RouteSpinner />}>
+                          <CalculatorsPage />
+                        </Suspense>
+                      </ShelledRoute>
+                    </RequireAuth>
+                  }
+                />
+                <Route
+                  path="/calculators/tvm-workbench"
+                  element={
+                    <RequireAuth>
+                      <ShelledRoute>
+                        <Suspense fallback={<RouteSpinner />}>
                           <WorkbenchPage />
+                        </Suspense>
+                      </ShelledRoute>
+                    </RequireAuth>
+                  }
+                />
+                <Route
+                  path="/calculators/:kind"
+                  element={
+                    <RequireAuth>
+                      <ShelledRoute>
+                        <Suspense fallback={<RouteSpinner />}>
+                          <CalculatorRunnerPage />
                         </Suspense>
                       </ShelledRoute>
                     </RequireAuth>
@@ -178,6 +217,42 @@ export function App(): JSX.Element {
                       <ShelledRoute>
                         <Suspense fallback={<RouteSpinner />}>
                           <AdminUsersPage />
+                        </Suspense>
+                      </ShelledRoute>
+                    </RequirePerm>
+                  }
+                />
+                <Route
+                  path="/admin/api-keys"
+                  element={
+                    <RequirePerm perm="user:list">
+                      <ShelledRoute>
+                        <Suspense fallback={<RouteSpinner />}>
+                          <AdminApiKeysPage />
+                        </Suspense>
+                      </ShelledRoute>
+                    </RequirePerm>
+                  }
+                />
+                <Route
+                  path="/admin/webhooks"
+                  element={
+                    <RequirePerm perm="user:list">
+                      <ShelledRoute>
+                        <Suspense fallback={<RouteSpinner />}>
+                          <AdminWebhooksPage />
+                        </Suspense>
+                      </ShelledRoute>
+                    </RequirePerm>
+                  }
+                />
+                <Route
+                  path="/admin/audit"
+                  element={
+                    <RequirePerm perm="audit:read">
+                      <ShelledRoute>
+                        <Suspense fallback={<RouteSpinner />}>
+                          <AdminAuditLogPage />
                         </Suspense>
                       </ShelledRoute>
                     </RequirePerm>

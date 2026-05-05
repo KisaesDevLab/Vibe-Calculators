@@ -24,6 +24,7 @@ import { buildSchedulesRouter, type ScheduleRouteDeps } from "./routes/schedules
 import { buildExtractionsRouter, type ExtractionRouteDeps } from "./routes/extractions.js";
 import { buildApiKeysRouter, type ApiKeysRouteDeps } from "./routes/api-keys.js";
 import { buildWebhooksRouter, type WebhooksRouteDeps } from "./routes/webhooks.js";
+import { buildCalculatorsRouter, type CalculatorsRouteDeps } from "./routes/calculators.js";
 import { buildOpenApiRouter } from "./routes/openapi.js";
 import { loadSession, type AuthMiddlewareOptions } from "./middleware/auth.js";
 
@@ -48,7 +49,8 @@ export interface ServerOptions {
       ScheduleRouteDeps &
       ExtractionRouteDeps &
       ApiKeysRouteDeps &
-      WebhooksRouteDeps;
+      WebhooksRouteDeps &
+      CalculatorsRouteDeps;
   };
 }
 
@@ -92,6 +94,7 @@ export function createApp(options: ServerOptions = {}): Express {
     app.use("/api/v1/search", buildSearchRouter(options.auth.routes));
     app.use("/api/v1/queue", buildQueueRouter(options.auth.routes));
     app.use("/api/v1/bulk", buildBulkRouter(options.auth.routes));
+    app.use("/api/v1/calculators", buildCalculatorsRouter(options.auth.routes));
   }
 
   // Final RFC 7807 error handler — never leak stack traces or

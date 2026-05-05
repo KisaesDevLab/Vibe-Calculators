@@ -18,6 +18,15 @@ const { createRateLimiter, redisStore } = await import("./lib/rate-limit.js");
 const { Redis } = await import("ioredis");
 const { createEmailProviderFromEnv } = await import("@vibe-calc/email");
 
+// Side-effect imports: importing @vibe-calc/tax-engine triggers each
+// calculator module's registerCalculator() call, populating the global
+// registry. registerTvmCalculators() does the same for the seven
+// calc-engine TVM templates we wrap as registry-shaped calculators.
+// Both must happen before the calculators route reads the registry.
+await import("@vibe-calc/tax-engine");
+const { registerTvmCalculators } = await import("./lib/tvm-calculators.js");
+registerTvmCalculators();
+
 // Drizzle DB used by every auth-aware route.
 const { db, pool } = createDatabase({ connectionString: env.DATABASE_URL });
 
