@@ -89,9 +89,14 @@ function daysBetween(a: string, b: string): number {
 }
 
 function qsbsExclusionPct(acquisitionDate: string): number {
+  // §1202 exclusion buckets, by acquisition date:
+  //   pre-1993-09-28          → 0% (not QSBS-eligible)
+  //   1993-09-28 to 2009-02-17 → 50% (original §1202)
+  //   2009-02-18 to 2010-09-27 → 75% (ARRA §1241)
+  //   2010-09-28+              → 100% (SBJA §2011, made permanent by PATH)
   const ms = Date.parse(`${acquisitionDate}T00:00:00Z`);
   const t1 = Date.parse("1993-09-28T00:00:00Z");
-  const t2 = Date.parse("2010-02-18T00:00:00Z");
+  const t2 = Date.parse("2009-02-18T00:00:00Z");
   const t3 = Date.parse("2010-09-28T00:00:00Z");
   if (ms < t1) return 0;
   if (ms < t2) return 0.5;
@@ -175,24 +180,27 @@ const capitalGains: TaxCalculator<Input, Output> = {
     }
 
     // Net the two buckets, then apply prior carryover.
+    // Per Pub 550: prior-year capital-loss carryover combines with the
+    // current-year net to form the position used for both NIIT and the
+    // ordinary-income offset. If the combined position is negative,
+    // up to $3k ($1.5k MFS) offsets ordinary income; the rest carries
+    // forward.
     let total = netShort.plus(netLong);
     let ordinaryOffset = new Decimal(0);
     let carryover = new Decimal(0);
     const carryIn = new Decimal(input.priorLossCarryover);
 
+    // Always subtract carry-in (it's a stored loss, applied first).
+    total = total.minus(carryIn);
+
     if (total.gte(0)) {
-      // Use carryover against gain first.
-      const used = Decimal.min(carryIn, total);
-      total = total.minus(used);
-      carryover = carryIn.minus(used);
+      carryover = new Decimal(0);
     } else {
-      // Net loss this year. Apply ordinary-income offset (cap $3k or $1.5k MFS).
       const cap = input.filingStatus === "mfs" ? 1500 : 3000;
       const loss = total.abs();
       const useOrdinary = Decimal.min(loss, cap);
       ordinaryOffset = useOrdinary;
-      const remaining = loss.minus(useOrdinary);
-      carryover = carryIn.plus(remaining);
+      carryover = loss.minus(useOrdinary);
       total = new Decimal(0);
     }
 

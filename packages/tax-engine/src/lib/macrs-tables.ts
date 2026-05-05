@@ -67,10 +67,20 @@ function buildMidMonthSchedule(
   const y1 = year1[placedInServiceMonth - 1];
   if (y1 === undefined) throw new Error("unreachable");
 
-  const totalYears = Math.ceil(lifeYears) + 1;
+  // Mid-month convention: year-1 covers (12.5 - month) months; remainder
+  // is spread across N full mid-years + a final partial year. The number
+  // of mid-years depends on the placed-in-service month:
+  //   floor((life × 12 - (12.5 - month)) / 12)
+  // Pub 946 Table A-6 (27.5y residential): 28 entries for months 1-6,
+  // 29 entries for months 7-12. Table A-7a (39y nonres-real): 40 entries
+  // regardless of month.
+  const monthsLife = lifeYears * 12;
+  const year1Months = 12.5 - placedInServiceMonth;
+  const remainingMonths = monthsLife - year1Months;
+  const fullMidYears = Math.floor(remainingMonths / 12);
   const result: number[] = [y1];
   let cumulative = new Decimal(y1);
-  for (let y = 2; y < totalYears; y++) {
+  for (let i = 0; i < fullMidYears; i++) {
     result.push(midYearPct);
     cumulative = cumulative.plus(midYearPct);
   }

@@ -53,6 +53,47 @@ describe("MACRS — IRS Pub 946 Appendix A", () => {
     expect(last?.endOfYearBasis).toBe(0);
   });
 
+  // 27.5-year residential rental, mid-month, placed in service January.
+  // Pub 946 Table A-6, month 1: year-1 = 3.485% — and the schedule has
+  // 28 entries (months 1-6), not 29. Regression for the row-count bug.
+  it("27.5-year residential rental placed in January has 28 entries (Pub 946 Table A-6)", () => {
+    const out = macrs.compute(
+      {
+        basis: 1_000_000,
+        propertyClass: "27.5",
+        placedInServiceYear: 2024,
+        placedInServiceMonth: 1,
+        useAds: false,
+      },
+      { tables: new Map(), asOf: new Date() },
+    );
+    expect(out.schedule.length).toBe(28);
+    expect(out.schedule[0]?.percentage).toBeCloseTo(3.485, 5);
+    expect(out.schedule[0]?.depreciation).toBe(34850);
+    // Final entry must be positive (negative would indicate row-count bug).
+    expect(out.schedule[out.schedule.length - 1]?.depreciation).toBeGreaterThan(0);
+    expect(out.totalDepreciation).toBe(1_000_000);
+  });
+
+  // 27.5-year residential rental, mid-month, placed in service July.
+  // Months 7-12 → 29 entries.
+  it("27.5-year residential rental placed in July has 29 entries", () => {
+    const out = macrs.compute(
+      {
+        basis: 1_000_000,
+        propertyClass: "27.5",
+        placedInServiceYear: 2024,
+        placedInServiceMonth: 7,
+        useAds: false,
+      },
+      { tables: new Map(), asOf: new Date() },
+    );
+    expect(out.schedule.length).toBe(29);
+    expect(out.schedule[0]?.percentage).toBeCloseTo(1.667, 5);
+    expect(out.schedule[out.schedule.length - 1]?.depreciation).toBeGreaterThan(0);
+    expect(out.totalDepreciation).toBe(1_000_000);
+  });
+
   // 27.5-year residential rental, mid-month, placed in service June.
   // Pub 946 Table A-6, month 6: year-1 = 1.970%
   it("27.5-year residential rental placed in June applies the mid-month June percentage", () => {

@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { and, desc, eq, isNull, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { engagements, calculations, type Database } from "@vibe-calc/db";
 import { problem, requirePermission } from "../middleware/auth.js";
 
@@ -52,7 +52,14 @@ export function buildQueueRouter(deps: QueueRouteDeps): Router {
             .select()
             .from(calculations)
             .where(
-              and(isNull(calculations.archivedAt), eq(calculations.status, "ready_for_review")),
+              and(
+                isNull(calculations.archivedAt),
+                eq(calculations.status, "ready_for_review"),
+                // Push the engagement filter into SQL — without this,
+                // a firm with > 100 ready_for_review calcs would
+                // return 0 hits because all 100 belong to other users.
+                inArray(calculations.engagementId, engagementIds),
+              ),
             )
             .orderBy(desc(calculations.updatedAt))
             .limit(100);
@@ -75,13 +82,9 @@ export function buildQueueRouter(deps: QueueRouteDeps): Router {
       };
     });
 
-    const calcsForMyEngagements = myCalcs.filter(
-      (c) => c.engagementId !== null && engagementIds.includes(c.engagementId),
-    );
-
     res.json({
       myEngagements: enriched,
-      pendingReviewCalculations: calcsForMyEngagements.map((c) => ({
+      pendingReviewCalculations: myCalcs.map((c) => ({
         id: c.id,
         engagementId: c.engagementId,
         kind: c.kind,

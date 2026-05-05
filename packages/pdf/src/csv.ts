@@ -18,16 +18,41 @@ export interface CsvOptions {
   newline?: "\r\n" | "\n";
 }
 
-export function escapeCsv(value: string, delimiter = ","): string {
+/**
+ * CSV-injection guard — Excel and other spreadsheets evaluate any
+ * cell starting with `=`, `+`, `-`, `@`, `\t`, or `\r` as a formula.
+ * Untrusted user input could embed `=HYPERLINK(...)`, `=cmd|...`,
+ * etc. We prefix dangerous-looking values with a single quote so the
+ * spreadsheet renders the value literally instead of evaluating it.
+ */
+function sanitizeCellForCsv(value: string): string {
+  if (value.length === 0) return value;
+  const first = value.charCodeAt(0);
+  // = + - @ \t \r
   if (
-    value.includes(delimiter) ||
-    value.includes('"') ||
-    value.includes("\n") ||
-    value.includes("\r")
+    first === 0x3d ||
+    first === 0x2b ||
+    first === 0x2d ||
+    first === 0x40 ||
+    first === 0x09 ||
+    first === 0x0d
   ) {
-    return `"${value.replace(/"/g, '""')}"`;
+    return `'${value}`;
   }
   return value;
+}
+
+export function escapeCsv(value: string, delimiter = ","): string {
+  const safe = sanitizeCellForCsv(value);
+  if (
+    safe.includes(delimiter) ||
+    safe.includes('"') ||
+    safe.includes("\n") ||
+    safe.includes("\r")
+  ) {
+    return `"${safe.replace(/"/g, '""')}"`;
+  }
+  return safe;
 }
 
 export function rowsToCsv(rows: readonly string[][], opts: CsvOptions = {}): string {

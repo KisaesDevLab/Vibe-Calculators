@@ -48,26 +48,34 @@ export function loadSession(opts: AuthMiddlewareOptions): RequestHandler {
   return async (req, res, next) => {
     try {
       // Try Authorization: Bearer vibe_… first (Phase 24.2 API keys).
+      // If a Bearer header is present, the request authenticates ONLY
+      // through the API key — falling back to a cookie session would
+      // silently authenticate as the wrong principal when the API
+      // key is invalid or its act-as user has been suspended.
       const authHeader = req.headers.authorization;
       if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
         const verified = await verifyApiKeyHeader(opts.db, authHeader);
-        if (verified && !verified.expired && !verified.revoked) {
-          // API keys may carry an act_as_user_id — resolve it so role
-          // checks work against a real user. If absent, the key is
-          // limited to its scopes via requirePermission below.
-          if (verified.row.actAsUserId) {
-            const [actAs] = await opts.db
-              .select()
-              .from(users)
-              .where(eq(users.id, verified.row.actAsUserId))
-              .limit(1);
-            if (actAs) {
-              req.user = actAs;
-              req.apiKey = verified.row;
-              return next();
-            }
-          }
+        if (!verified || verified.expired || verified.revoked) {
+          return next();
         }
+        if (!verified.row.actAsUserId) {
+          // Scope-only keys not yet supported (no scoped permission
+          // resolver on req.user). Reject for now.
+          return next();
+        }
+        const [actAs] = await opts.db
+          .select()
+          .from(users)
+          .where(eq(users.id, verified.row.actAsUserId))
+          .limit(1);
+        if (actAs && !actAs.archivedAt && actAs.status === "active") {
+          req.user = actAs;
+          req.apiKey = verified.row;
+        }
+        // Whether we authenticated successfully or not, do NOT fall
+        // through to cookie auth — the explicit Bearer header signals
+        // the caller wants API-key auth.
+        return next();
       }
 
       const sid = req.cookies?.[SESSION_COOKIE_NAME] as unknown;

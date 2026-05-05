@@ -89,6 +89,30 @@ function dayCount(a: string, b: string): number {
   );
 }
 
+/**
+ * §6651(a) "month or fraction thereof" — for delay 4/15→4/16, returns 1.
+ * For 4/15→5/16, returns 2 (one full month + 1 day = 2 month-fractions).
+ * For 4/15→7/14, returns 3 (one full month + one full month + 30-day partial).
+ *
+ * Walks calendar months: each crossed month boundary increments by 1; if
+ * any portion of a final calendar month is crossed, increment again.
+ */
+function monthsOrFraction(fromDate: string, toDate: string): number {
+  const a = new Date(`${fromDate}T00:00:00Z`);
+  const b = new Date(`${toDate}T00:00:00Z`);
+  if (b.getTime() <= a.getTime()) return 0;
+  // Walk one calendar month at a time from `fromDate` until we pass `toDate`.
+  let cursor = new Date(a.getTime());
+  let count = 0;
+  while (cursor.getTime() < b.getTime()) {
+    cursor = new Date(
+      Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, cursor.getUTCDate()),
+    );
+    count++;
+  }
+  return count;
+}
+
 function rateForDate(dateStr: string): number {
   const t = Date.parse(`${dateStr}T00:00:00Z`);
   let current = QUARTERLY_RATES[0]?.rate ?? 0.08;
@@ -156,37 +180,57 @@ const irsInterest: TaxCalculator<Input, Output> = {
     const days = dayCount(input.returnDueDate, input.paymentDate);
     const balance = new Decimal(input.taxBalanceOwed);
 
-    // Interest (daily compounded).
+    // Interest (daily compounded per IRC §6622).
     const accrued = dailyAccrue(balance, input.returnDueDate, input.paymentDate);
     const interest = accrued.minus(balance);
 
-    // FTP: 0.5%/month (or 0.25% with installment agreement, 1% post-levy).
+    // FTP: §6651(a)(2) — 0.5%/month or fraction thereof; 0.25% with
+    // an installment agreement; 1% after IRS levy/notice. Cap 25%.
     const ftpMonthlyRate = input.installmentAgreementOnFile
       ? 0.0025
       : input.levyNoticeIssued
         ? 0.01
         : 0.005;
-    const monthsLate = Math.ceil(days / 30);
+    // "Month or fraction" — calendar-month walk from due date.
+    const monthsLate = monthsOrFraction(input.returnDueDate, input.paymentDate);
     const ftpPctUncapped = new Decimal(ftpMonthlyRate).times(monthsLate);
     const ftpPctCapped = Decimal.min(ftpPctUncapped, 0.25);
     const ftp = balance.times(ftpPctCapped);
 
-    // FTF: 5%/month, cap 25%; reduced by FTP in concurrent months.
+    // FTF: §6651(a)(1) — 5%/month or fraction thereof, cap 25%, reduced
+    // by FTP in any month both apply (which is the first 5 months when
+    // both run concurrently → net 4.5%/mo for 5 months = 22.5%, then
+    // FTP continues alone for another 45 months to reach the 25% FTP cap).
+    // Minimum penalty (§6651(a)) for returns >60 days late: lesser of
+    // $510 (2024 — adjusted yearly) or 100% of unpaid tax.
     let ftf = new Decimal(0);
     if (!input.returnFiledOnTime && input.actualFilingDate) {
-      const filingDelay = dayCount(input.returnDueDate, input.actualFilingDate);
-      const ftfMonths = Math.ceil(filingDelay / 30);
-      const ftfRate = 0.05;
-      const ftpConcurrent = 0.005; // base FTP rate during stacking
-      const netFtfMonthly = ftfRate - ftpConcurrent;
-      const ftfPctUncapped = new Decimal(netFtfMonthly).times(ftfMonths);
-      const ftfPctCapped = Decimal.min(
-        ftfPctUncapped,
-        new Decimal(0.25).minus(0.05 * ftfMonths > 0 ? 0 : 0),
-      );
-      // Simpler, correct formulation: total = min(25%, 4.5%/mo × months) where the 4.5% accounts for the FTP overlap during the first 5 months.
-      ftf = balance.times(Decimal.min(ftfPctUncapped, 0.225));
-      void ftfPctCapped;
+      const ftfMonths = monthsOrFraction(input.returnDueDate, input.actualFilingDate);
+      // Net rate = 5% - 0.5% concurrent FTP = 4.5%/mo, capped at 22.5%
+      // (5 months × 4.5%). Beyond month 5, FTF is at its 25% cap; FTF's
+      // own statutory cap is 25%, but with FTP concurrent through month 5
+      // the visible FTF amount is 22.5% net.
+      const ftfNetCap = new Decimal(0.045).times(ftfMonths);
+      const ftfNet = Decimal.min(ftfNetCap, 0.225);
+      ftf = balance.times(ftfNet);
+      // Minimum-penalty floor for returns > 60 days late
+      // (§6651(a)). Inflation-adjusted: $485 (2023), $510 (2024),
+      // $525 (2025) — Rev. Proc. 2024-40 indexes.
+      const filingDelayDays = dayCount(input.returnDueDate, input.actualFilingDate);
+      if (filingDelayDays > 60) {
+        // Date string is regex-validated YYYY-MM-DD upstream; UTC
+        // parser is the lint-clean way to pull the year.
+        const dueYear = new Date(`${input.returnDueDate}T00:00:00Z`).getUTCFullYear();
+        const minPenaltyByYear: Record<number, number> = {
+          2023: 485,
+          2024: 510,
+          2025: 525,
+          2026: 540, // estimated; check Rev. Proc. when published
+        };
+        const minPenaltyAmount = minPenaltyByYear[dueYear] ?? 510;
+        const minPenalty = Decimal.min(minPenaltyAmount, balance);
+        if (ftf.lt(minPenalty)) ftf = minPenalty;
+      }
     }
 
     const total = balance.plus(interest).plus(ftp).plus(ftf);
@@ -200,7 +244,7 @@ const irsInterest: TaxCalculator<Input, Output> = {
     }
     if (!input.returnFiledOnTime) {
       notes.push(
-        "FTF stacks with FTP — IRS reduces FTF by the FTP amount for any month both apply (max combined 4.5%/mo for 5 months).",
+        "FTF stacks with FTP — IRS reduces FTF by the concurrent FTP (net 4.5%/mo for the first 5 months); §6651(a) minimum penalty applies for returns >60 days late.",
       );
     }
 

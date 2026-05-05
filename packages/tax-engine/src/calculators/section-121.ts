@@ -30,7 +30,13 @@ const inputSchema = z
     monthsUsed: z.number().int().min(0).max(60),
     /** Used the §121 exclusion within prior 24 months? */
     usedExclusionInLast24Months: z.boolean().default(false),
-    /** Months of nonqualified use (rental, etc.) post-2008-12-31. */
+    /**
+     * Months of nonqualified use (rental, etc.) post-2008-12-31.
+     * Per IRC §121(b)(5)(C)(ii)(I), exclude any nonqualified-use
+     * period that occurs AFTER the LAST day of qualified use as a
+     * principal residence — those months count as qualified for the
+     * ratio. Pub 523 Worksheet 1 walks this exclusion explicitly.
+     */
     monthsNonqualifiedUse: z.number().int().min(0).default(0),
     /** Total months of ownership (denominator for nonqualified-use ratio). */
     totalMonthsOwned: z.number().int().min(0).default(0),

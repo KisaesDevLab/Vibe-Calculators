@@ -85,7 +85,9 @@ function piaFromAime(aime: number, eligibilityYear: number): number {
     0.32,
   );
   const tier3 = Decimal.max(0, aimeD.minus(bp.second)).times(0.15);
-  return tier1.plus(tier2).plus(tier3).toDecimalPlaces(2).toNumber();
+  // SSA POMS RS 00605.005: round PIA DOWN to the next lower $0.10
+  // (i.e. truncate to one decimal place).
+  return tier1.plus(tier2).plus(tier3).toDecimalPlaces(1, Decimal.ROUND_DOWN).toNumber();
 }
 
 function adjustForClaimAge(

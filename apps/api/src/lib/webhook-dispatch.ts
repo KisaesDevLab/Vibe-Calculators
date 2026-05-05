@@ -22,6 +22,8 @@ export interface DispatchInput {
   fetcher?: typeof fetch;
   /** Override clock. */
   now?: Date;
+  /** Hard per-request timeout. Default 10s. */
+  timeoutMs?: number;
 }
 
 export async function dispatchWebhook(
@@ -59,6 +61,10 @@ export async function dispatchWebhook(
   for (const sub of matching) {
     const t = Math.floor(now.getTime() / 1000);
     const sig = createHmac("sha256", sub.secret).update(`${t}.${body}`).digest("hex");
+    // Per-call hard timeout — defense against a slow / malicious /
+    // unreachable webhook target hanging the dispatcher loop.
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), input.timeoutMs ?? 10_000);
     try {
       const res = await fetcher(sub.url, {
         method: "POST",
@@ -68,7 +74,9 @@ export async function dispatchWebhook(
           "X-Vibe-Action": input.action,
         },
         body,
+        signal: ctrl.signal,
       });
+      clearTimeout(timer);
       if (!res.ok) {
         failures++;
         await db
@@ -83,6 +91,7 @@ export async function dispatchWebhook(
         .set({ lastFiredAt: now, lastFailureMessage: null })
         .where(eq(webhookSubscriptions.id, sub.id));
     } catch (err) {
+      clearTimeout(timer);
       failures++;
       await db
         .update(webhookSubscriptions)

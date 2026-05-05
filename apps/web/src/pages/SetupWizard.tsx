@@ -33,14 +33,31 @@ export function SetupWizardPage(): JSX.Element {
   useEffect(() => {
     let cancelled = false;
     void fetch("/api/v1/setup/status", { credentials: "include" })
-      .then((r) => r.json())
-      .then((j: SetupStatus) => {
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json() as Promise<unknown>;
+      })
+      .then((raw) => {
         if (cancelled) return;
-        setStatus(j);
-        if (!j.open) navigate("/login", { replace: true });
+        // Validate the response shape — opening the wizard on a
+        // transient parser hiccup would let an attacker race a fresh
+        // setup attempt against a live deploy.
+        if (
+          raw &&
+          typeof raw === "object" &&
+          typeof (raw as { open?: unknown }).open === "boolean"
+        ) {
+          const j = raw as SetupStatus;
+          setStatus(j);
+          if (!j.open) navigate("/login", { replace: true });
+        } else {
+          navigate("/login", { replace: true });
+        }
       })
       .catch(() => {
-        if (!cancelled) setStatus({ open: true });
+        // Network / 4xx / 5xx — fall through to /login. The wizard
+        // only opens when we have a confirmed `{ open: true }` response.
+        if (!cancelled) navigate("/login", { replace: true });
       });
     return () => {
       cancelled = true;

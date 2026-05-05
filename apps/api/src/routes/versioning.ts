@@ -84,44 +84,52 @@ export function buildVersioningRouter(deps: VersioningRouteDeps): Router {
       }
 
       const newVersion = calc.version + 1;
-      const [version] = await deps.db
-        .insert(calculationVersions)
-        .values({
-          calculationId: id,
-          version: newVersion,
-          inputsJson: parsed.data.inputs,
-          outputsJson: parsed.data.outputs ?? {},
-          rowAnnotations: parsed.data.rowAnnotations ?? {},
-          notes: parsed.data.notes ?? null,
-          computedAt: new Date(),
-          computedBy: req.user.id,
-        })
-        .returning();
-      if (!version) return problem(res, 500, "Internal error", "Insert returned no row");
+      const userId = req.user.id;
+      // All-or-nothing: insert version row + bump pointer. If either
+      // fails, the row count and current_version_id stay consistent.
+      const result = await deps.db.transaction(async (tx) => {
+        const [version] = await tx
+          .insert(calculationVersions)
+          .values({
+            calculationId: id,
+            version: newVersion,
+            inputsJson: parsed.data.inputs,
+            outputsJson: parsed.data.outputs ?? {},
+            rowAnnotations: parsed.data.rowAnnotations ?? {},
+            notes: parsed.data.notes ?? null,
+            computedAt: new Date(),
+            computedBy: userId,
+          })
+          .returning();
+        if (!version) throw new Error("calculation_versions insert returned no row");
+        const [updated] = await tx
+          .update(calculations)
+          .set({
+            version: newVersion,
+            currentVersionId: version.id,
+            inputsJson: parsed.data.inputs,
+            outputsJson: parsed.data.outputs ?? {},
+            computedAt: new Date(),
+            computedBy: userId,
+            updatedAt: new Date(),
+          })
+          .where(eq(calculations.id, id))
+          .returning();
+        return { version, updated };
+      });
 
-      const [updated] = await deps.db
-        .update(calculations)
-        .set({
-          version: newVersion,
-          currentVersionId: version.id,
-          inputsJson: parsed.data.inputs,
-          outputsJson: parsed.data.outputs ?? {},
-          computedAt: new Date(),
-          computedBy: req.user.id,
-          updatedAt: new Date(),
-        })
-        .where(eq(calculations.id, id))
-        .returning();
-
+      // Audit event runs outside the transaction — chain integrity is
+      // not transaction-scoped, but the event firing is best-effort
+      // for save events; a failure here doesn't roll back the save.
       await recordAuditEvent(deps.db, {
         action: "calculation.save",
         entityKind: "calculation",
         entityId: id,
-        actorUserId: req.user.id,
-        payload: { version: newVersion, versionId: version.id },
+        actorUserId: userId,
+        payload: { version: newVersion, versionId: result.version.id },
       });
 
-      res.json({ calculation: updated, version });
+      res.json({ calculation: result.updated, version: result.version });
     },
   );
 
@@ -206,33 +214,38 @@ export function buildVersioningRouter(deps: VersioningRouteDeps): Router {
       if (!target) return problem(res, 404, "Not found", "Target version not found");
 
       const newVersion = calc.version + 1;
-      const [version] = await deps.db
-        .insert(calculationVersions)
-        .values({
-          calculationId: id,
-          version: newVersion,
-          inputsJson: target.inputsJson,
-          outputsJson: target.outputsJson,
-          rowAnnotations: target.rowAnnotations,
-          notes: parsed.data.notes ?? `Rolled back from v${target.version}`,
-          computedAt: new Date(),
-          computedBy: req.user.id,
-        })
-        .returning();
-      if (!version) return problem(res, 500, "Internal error", "Insert returned no row");
-
-      const [updated] = await deps.db
-        .update(calculations)
-        .set({
-          version: newVersion,
-          currentVersionId: version.id,
-          inputsJson: target.inputsJson,
-          outputsJson: target.outputsJson,
-          status: "draft",
-          updatedAt: new Date(),
-        })
-        .where(eq(calculations.id, id))
-        .returning();
+      const userId = req.user.id;
+      const result = await deps.db.transaction(async (tx) => {
+        const [version] = await tx
+          .insert(calculationVersions)
+          .values({
+            calculationId: id,
+            version: newVersion,
+            inputsJson: target.inputsJson,
+            outputsJson: target.outputsJson,
+            rowAnnotations: target.rowAnnotations,
+            notes: parsed.data.notes ?? `Rolled back from v${target.version}`,
+            computedAt: new Date(),
+            computedBy: userId,
+          })
+          .returning();
+        if (!version) throw new Error("calculation_versions insert returned no row");
+        const [updated] = await tx
+          .update(calculations)
+          .set({
+            version: newVersion,
+            currentVersionId: version.id,
+            inputsJson: target.inputsJson,
+            outputsJson: target.outputsJson,
+            status: "draft",
+            updatedAt: new Date(),
+          })
+          .where(eq(calculations.id, id))
+          .returning();
+        return { version, updated };
+      });
+      const version = result.version;
+      const updated = result.updated;
 
       await recordAuditEvent(deps.db, {
         action: "calculation.rollback",
@@ -288,19 +301,25 @@ export function buildVersioningRouter(deps: VersioningRouteDeps): Router {
         return problem(res, 409, "Conflict", "Calculation is not awaiting review");
       }
 
-      // Lock the current version.
-      if (calc.currentVersionId) {
-        await deps.db
-          .update(calculationVersions)
-          .set({ lockedAt: new Date(), lockedBy: req.user.id })
-          .where(eq(calculationVersions.id, calc.currentVersionId));
-      }
-
-      const [updated] = await deps.db
-        .update(calculations)
-        .set({ status: "approved", updatedAt: new Date() })
-        .where(eq(calculations.id, id))
-        .returning();
+      const userId = req.user.id;
+      // Lock the current version + flip status atomically. Without
+      // the transaction, a DB hiccup between the two writes leaves
+      // a locked version with `ready_for_review` status — an audit
+      // anomaly that's hard to repair.
+      const updated = await deps.db.transaction(async (tx) => {
+        if (calc.currentVersionId) {
+          await tx
+            .update(calculationVersions)
+            .set({ lockedAt: new Date(), lockedBy: userId })
+            .where(eq(calculationVersions.id, calc.currentVersionId));
+        }
+        const [row] = await tx
+          .update(calculations)
+          .set({ status: "approved", updatedAt: new Date() })
+          .where(eq(calculations.id, id))
+          .returning();
+        return row;
+      });
       await recordAuditEvent(deps.db, {
         action: "calculation.approve",
         entityKind: "calculation",

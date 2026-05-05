@@ -122,12 +122,30 @@ const hsa: TaxCalculator<Input, Output> = {
     const room = Decimal.max(0, finalLimit.minus(input.plannedContribution));
     const excess = Decimal.max(0, new Decimal(input.plannedContribution).minus(finalLimit));
 
-    // Projection: future value of (currentBalance + plannedContribution) compounded annually
-    // assuming the contribution lands at year start.
+    // Projection: future value of currentBalance growing for N years +
+    // an annuity-due of plannedContribution per year (contribution at
+    // year start, then grows for full year). Per Pub 969 illustrative
+    // examples, recurring contributions are the dominant accumulation
+    // mechanism — first-year-only would understate the FV by 5-10×
+    // for a young saver.
+    //
+    //   FV = currentBalance × (1+g)^n
+    //      + plannedContribution × ((1+g)^n - 1) / g × (1+g)
+    //
+    // Special case g=0 → degenerates to currentBalance + n × plannedContribution.
     const r = new Decimal(1).plus(input.growthRate);
-    const fv = new Decimal(input.currentBalance)
-      .plus(input.plannedContribution)
-      .times(r.pow(input.yearsToProject));
+    const n = input.yearsToProject;
+    const balGrowth = new Decimal(input.currentBalance).times(r.pow(n));
+    let annuityFv: Decimal;
+    if (input.growthRate === 0 || n === 0) {
+      annuityFv = new Decimal(input.plannedContribution).times(n);
+    } else {
+      annuityFv = new Decimal(input.plannedContribution)
+        .times(r.pow(n).minus(1))
+        .div(input.growthRate)
+        .times(r);
+    }
+    const fv = balGrowth.plus(annuityFv);
 
     const notes: string[] = [];
     if (input.useLastMonthRule) {

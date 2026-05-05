@@ -105,15 +105,19 @@ export async function scheduleToXlsx(
     row += 1;
   }
 
-  // Totals row.
+  // Totals row. Guard against an empty schedule — a `SUM(D4:D3)`
+  // formula is invalid in Excel and silently breaks the workbook.
   const lastDataRow = row - 1;
+  const hasData = lastDataRow >= 4;
   sheet.getRow(row).values = [
     "Totals",
     "",
     "",
-    { formula: `SUM(D4:D${lastDataRow})`, result: schedule.totalInterest.toNumber() },
+    hasData ? { formula: `SUM(D4:D${lastDataRow})`, result: schedule.totalInterest.toNumber() } : 0,
     "",
-    { formula: `SUM(F4:F${lastDataRow})`, result: schedule.totalPrincipal.toNumber() },
+    hasData
+      ? { formula: `SUM(F4:F${lastDataRow})`, result: schedule.totalPrincipal.toNumber() }
+      : 0,
     "",
     "",
     "",
