@@ -84,7 +84,27 @@ export interface WorkbenchSnapshot {
 }
 
 const HISTORY_LIMIT = 100;
-const PERSIST_KEY = "vibecalc.workbench.persist.v1";
+/**
+ * Phase 11.19 — multi-tab support.
+ *
+ * The active tab's state is the live store (master, rows, loanDetails,
+ * rowAnnotations, past, future, currentCalcId, currentVersion). Each
+ * tab also persists independently to localStorage at
+ * `vibecalc.workbench.tab.<id>` so a refresh restores every tab.
+ * The tab-list registry lives at `vibecalc.workbench.tabs.v1` =
+ * `{ tabs: [{id,name}], activeTabId }`.
+ */
+const PERSIST_KEY_PREFIX = "vibecalc.workbench.tab.";
+const TABS_REGISTRY_KEY = "vibecalc.workbench.tabs.v1";
+
+export interface WorkbenchTabMeta {
+  id: string;
+  name: string;
+}
+
+function newTabId(): string {
+  return `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+}
 
 interface WorkbenchState {
   master: MasterUiState;
@@ -96,6 +116,11 @@ interface WorkbenchState {
   currentCalcId: string | null;
   /** Bumped by each successful Save; informs the Save button label. */
   currentVersion: number;
+  /** Phase 11.19 — open tabs. The first entry is created on app boot
+   *  if no tabs registry exists. */
+  tabs: WorkbenchTabMeta[];
+  /** Active tab id; the live state above belongs to this tab. */
+  activeTabId: string;
   /** Snapshots before the current state (most recent at the end). */
   past: WorkbenchSnapshot[];
   /** Snapshots after the current state (most recent at the start). */
@@ -131,6 +156,11 @@ interface WorkbenchState {
   redo: () => void;
   /** Re-hydrate from localStorage. Called once on app boot. */
   restoreFromLocal: () => void;
+  /** Phase 11.19 — multi-tab actions. */
+  newTab: (name?: string) => string;
+  switchTab: (id: string) => void;
+  closeTab: (id: string) => void;
+  renameTab: (id: string, name: string) => void;
   /**
    * Load a previously-saved calculation's `inputs` JSON (the
    * { master, rows, loanDetails } blob the workbench writes on Save)
@@ -235,26 +265,54 @@ function snapshot(
 }
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
+function persistTabRegistry(s: WorkbenchState): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      TABS_REGISTRY_KEY,
+      JSON.stringify({ tabs: s.tabs, activeTabId: s.activeTabId }),
+    );
+  } catch {
+    // ignore quota / disabled storage
+  }
+}
+
+function persistTabState(tabId: string, s: WorkbenchState): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      `${PERSIST_KEY_PREFIX}${tabId}`,
+      JSON.stringify({
+        master: s.master,
+        rows: s.rows,
+        loanDetails: s.loanDetails,
+        rowAnnotations: s.rowAnnotations,
+        currentCalcId: s.currentCalcId,
+        currentVersion: s.currentVersion,
+      }),
+    );
+  } catch {
+    // ignore
+  }
+}
+
+function readTabState(tabId: string): Partial<WorkbenchState> | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(`${PERSIST_KEY_PREFIX}${tabId}`);
+    if (!raw) return null;
+    return JSON.parse(raw) as Partial<WorkbenchState>;
+  } catch {
+    return null;
+  }
+}
+
 function persist(s: WorkbenchState): void {
   if (typeof window === "undefined") return;
   if (persistTimer) clearTimeout(persistTimer);
   persistTimer = setTimeout(() => {
-    try {
-      window.localStorage.setItem(
-        PERSIST_KEY,
-        JSON.stringify({
-          master: s.master,
-          rows: s.rows,
-          loanDetails: s.loanDetails,
-          rowAnnotations: s.rowAnnotations,
-          currentCalcId: s.currentCalcId,
-          currentVersion: s.currentVersion,
-        }),
-      );
-    } catch {
-      // Quota or disabled storage — silent. The user loses persistence
-      // across refresh but the in-memory undo stack still works.
-    }
+    persistTabState(s.activeTabId, s);
+    persistTabRegistry(s);
   }, 500);
 }
 
@@ -274,6 +332,8 @@ function withHistory<T extends Partial<WorkbenchState>>(
   });
 }
 
+const INITIAL_TAB_ID = newTabId();
+
 export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   master: { ...DEFAULT_MASTER },
   rows: [emptyRow()],
@@ -284,6 +344,111 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   rowAnnotations: {},
   past: [],
   future: [],
+  tabs: [{ id: INITIAL_TAB_ID, name: "Tab 1" }],
+  activeTabId: INITIAL_TAB_ID,
+
+  newTab: (name) => {
+    const id = newTabId();
+    set((s) => {
+      // Save the current tab's state, then switch to a fresh blank tab.
+      persistTabState(s.activeTabId, s);
+      const tabs = [...s.tabs, { id, name: name ?? `Tab ${s.tabs.length + 1}` }];
+      const next: WorkbenchState = {
+        ...s,
+        master: { ...DEFAULT_MASTER },
+        rows: [emptyRow()],
+        loanDetails: { ...DEFAULT_LOAN_DETAILS },
+        rowAnnotations: {},
+        currentCalcId: null,
+        currentVersion: 0,
+        past: [],
+        future: [],
+        tabs,
+        activeTabId: id,
+      };
+      persistTabRegistry(next);
+      return next;
+    });
+    return id;
+  },
+
+  switchTab: (id) =>
+    set((s) => {
+      if (id === s.activeTabId) return s;
+      if (!s.tabs.some((t) => t.id === id)) return s;
+      // Save current tab's snapshot, load target's.
+      persistTabState(s.activeTabId, s);
+      const target = readTabState(id);
+      const next: WorkbenchState = {
+        ...s,
+        master: { ...DEFAULT_MASTER, ...(target?.master ?? {}) },
+        rows:
+          Array.isArray(target?.rows) && target.rows.length > 0
+            ? (target.rows as GridRow[])
+            : [emptyRow()],
+        loanDetails: { ...DEFAULT_LOAN_DETAILS, ...(target?.loanDetails ?? {}) },
+        rowAnnotations:
+          target?.rowAnnotations && typeof target.rowAnnotations === "object"
+            ? target.rowAnnotations
+            : {},
+        currentCalcId: target?.currentCalcId ?? null,
+        currentVersion: target?.currentVersion ?? 0,
+        past: [],
+        future: [],
+        activeTabId: id,
+      };
+      persistTabRegistry(next);
+      return next;
+    }),
+
+  closeTab: (id) =>
+    set((s) => {
+      if (s.tabs.length <= 1) return s; // Don't close the last tab.
+      const tabs = s.tabs.filter((t) => t.id !== id);
+      // Drop the closed tab's persisted state.
+      try {
+        window.localStorage.removeItem(`${PERSIST_KEY_PREFIX}${id}`);
+      } catch {
+        // ignore
+      }
+      // If we closed the active tab, switch to the previous in the list.
+      if (id !== s.activeTabId) {
+        persistTabRegistry({ ...s, tabs });
+        return { ...s, tabs };
+      }
+      const idx = s.tabs.findIndex((t) => t.id === id);
+      const fallback = tabs[Math.max(0, idx - 1)] ?? tabs[0]!;
+      const target = readTabState(fallback.id);
+      const next: WorkbenchState = {
+        ...s,
+        master: { ...DEFAULT_MASTER, ...(target?.master ?? {}) },
+        rows:
+          Array.isArray(target?.rows) && target.rows.length > 0
+            ? (target.rows as GridRow[])
+            : [emptyRow()],
+        loanDetails: { ...DEFAULT_LOAN_DETAILS, ...(target?.loanDetails ?? {}) },
+        rowAnnotations:
+          target?.rowAnnotations && typeof target.rowAnnotations === "object"
+            ? target.rowAnnotations
+            : {},
+        currentCalcId: target?.currentCalcId ?? null,
+        currentVersion: target?.currentVersion ?? 0,
+        past: [],
+        future: [],
+        tabs,
+        activeTabId: fallback.id,
+      };
+      persistTabRegistry(next);
+      return next;
+    }),
+
+  renameTab: (id, name) =>
+    set((s) => {
+      const tabs = s.tabs.map((t) => (t.id === id ? { ...t, name } : t));
+      const next = { ...s, tabs };
+      persistTabRegistry(next);
+      return next;
+    }),
 
   setMaster: (key, value) => withHistory(set, (s) => ({ master: { ...s.master, [key]: value } })),
 
@@ -353,19 +518,37 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     set((s) => {
       if (typeof window === "undefined") return s;
       try {
-        const raw = window.localStorage.getItem(PERSIST_KEY);
-        if (!raw) return s;
-        const j = JSON.parse(raw) as Partial<WorkbenchState>;
-        return {
-          ...s,
-          master: { ...DEFAULT_MASTER, ...(j.master ?? {}) },
-          rows: Array.isArray(j.rows) && j.rows.length > 0 ? (j.rows as GridRow[]) : s.rows,
-          loanDetails: { ...DEFAULT_LOAN_DETAILS, ...(j.loanDetails ?? {}) },
-          rowAnnotations:
-            j.rowAnnotations && typeof j.rowAnnotations === "object" ? j.rowAnnotations : {},
-          currentCalcId: j.currentCalcId ?? null,
-          currentVersion: j.currentVersion ?? 0,
-        };
+        // Phase 11.19 — read the tab registry first, then load the
+        // active tab's snapshot. Falls back to the boot defaults
+        // when no registry exists (first run).
+        const reg = window.localStorage.getItem(TABS_REGISTRY_KEY);
+        if (reg) {
+          const parsed = JSON.parse(reg) as {
+            tabs?: WorkbenchTabMeta[];
+            activeTabId?: string;
+          };
+          if (Array.isArray(parsed.tabs) && parsed.tabs.length > 0 && parsed.activeTabId) {
+            const target = readTabState(parsed.activeTabId);
+            return {
+              ...s,
+              tabs: parsed.tabs,
+              activeTabId: parsed.activeTabId,
+              master: { ...DEFAULT_MASTER, ...(target?.master ?? {}) },
+              rows:
+                Array.isArray(target?.rows) && target.rows.length > 0
+                  ? (target.rows as GridRow[])
+                  : s.rows,
+              loanDetails: { ...DEFAULT_LOAN_DETAILS, ...(target?.loanDetails ?? {}) },
+              rowAnnotations:
+                target?.rowAnnotations && typeof target.rowAnnotations === "object"
+                  ? target.rowAnnotations
+                  : {},
+              currentCalcId: target?.currentCalcId ?? null,
+              currentVersion: target?.currentVersion ?? 0,
+            };
+          }
+        }
+        return s;
       } catch {
         return s;
       }

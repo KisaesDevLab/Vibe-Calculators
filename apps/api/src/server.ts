@@ -27,6 +27,7 @@ import { buildWebhooksRouter, type WebhooksRouteDeps } from "./routes/webhooks.j
 import { buildCalculatorsRouter, type CalculatorsRouteDeps } from "./routes/calculators.js";
 import { buildWorkbenchRouter } from "./routes/workbench.js";
 import { buildAdminAiRouter, type AdminAiRouteDeps } from "./routes/admin-ai.js";
+import { buildBulkExportRouter, type BulkExportRouteDeps } from "./routes/bulk-export.js";
 import {
   buildAdminAiPromptsRouter,
   type AdminAiPromptsRouteDeps,
@@ -60,7 +61,8 @@ export interface ServerOptions {
       CalculatorsRouteDeps &
       AdminAiRouteDeps &
       AdminAiPromptsRouteDeps &
-      FirmSettingsRouteDeps;
+      FirmSettingsRouteDeps &
+      BulkExportRouteDeps;
   };
 }
 
@@ -125,6 +127,7 @@ export function createApp(options: ServerOptions = {}): Express {
     );
     app.use("/api/v1/admin/firm-settings", buildFirmSettingsRouter(options.auth.routes));
     app.use("/api/v1/admin/ai-prompts", buildAdminAiPromptsRouter(options.auth.routes));
+    app.use("/api/v1/calculations/bulk", buildBulkExportRouter(options.auth.routes));
   }
 
   // Final RFC 7807 error handler — never leak stack traces or

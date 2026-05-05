@@ -1,7 +1,8 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Copy, ExternalLink, History } from "lucide-react";
+import { Copy, ExternalLink, History, FileArchive } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/auth/api";
@@ -56,6 +57,63 @@ export function CalculationsIndexPage(): JSX.Element {
     queryKey: ["calculations", "index"],
     queryFn: () => call<{ calculations: CalculationRow[] }>("/api/v1/calculations?limit=100"),
   });
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [exporting, setExporting] = useState(false);
+
+  function toggle(id: string): void {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function toggleAll(rows: CalculationRow[]): void {
+    setSelected((prev) =>
+      prev.size === rows.length ? new Set<string>() : new Set(rows.map((r) => r.id)),
+    );
+  }
+
+  async function exportZip(): Promise<void> {
+    if (selected.size === 0) return;
+    if (selected.size > 50) {
+      toast.error("Bulk export limited to 50 calculations per call.");
+      return;
+    }
+    setExporting(true);
+    try {
+      const res = await fetch("/api/v1/calculations/bulk/zip", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [...selected] }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        let detail = `HTTP ${res.status}`;
+        try {
+          detail = (JSON.parse(text) as { detail?: string }).detail ?? detail;
+        } catch {
+          // fall through
+        }
+        throw new Error(detail);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `calculations-${new Date().toISOString().slice(0, 10)}-${selected.size}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`Downloaded ${selected.size} calculations.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setExporting(false);
+    }
+  }
 
   async function whatIf(id: string): Promise<void> {
     try {
@@ -105,9 +163,37 @@ export function CalculationsIndexPage(): JSX.Element {
           )}
           {query.data && query.data.calculations.length > 0 && (
             <div className="overflow-x-auto">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-xs text-muted-foreground">
+                  {selected.size > 0
+                    ? `${selected.size} selected · cap 50 per export`
+                    : "Tick rows to bulk-export them."}
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={selected.size === 0 || exporting}
+                  onClick={() => void exportZip()}
+                >
+                  <FileArchive className="mr-1 h-3 w-3" />
+                  {exporting
+                    ? "Zipping…"
+                    : `Export ${selected.size > 0 ? `${selected.size} ` : ""}as ZIP`}
+                </Button>
+              </div>
               <table className="w-full text-sm">
                 <thead className="border-b text-left text-xs uppercase text-muted-foreground">
                   <tr>
+                    <th className="px-2 py-2">
+                      <input
+                        type="checkbox"
+                        checked={
+                          selected.size > 0 && selected.size === query.data.calculations.length
+                        }
+                        onChange={() => toggleAll(query.data.calculations)}
+                        aria-label="Toggle all"
+                      />
+                    </th>
                     <th className="px-2 py-2">Name</th>
                     <th className="px-2 py-2">Kind</th>
                     <th className="px-2 py-2">Status</th>
@@ -119,6 +205,14 @@ export function CalculationsIndexPage(): JSX.Element {
                 <tbody>
                   {query.data.calculations.map((c) => (
                     <tr key={c.id} className="border-b">
+                      <td className="px-2 py-2">
+                        <input
+                          type="checkbox"
+                          checked={selected.has(c.id)}
+                          onChange={() => toggle(c.id)}
+                          aria-label={`Select ${c.name}`}
+                        />
+                      </td>
                       <td className="px-2 py-2 font-medium">{c.name}</td>
                       <td className="px-2 py-2 text-xs">{c.kind}</td>
                       <td className="px-2 py-2 text-xs">

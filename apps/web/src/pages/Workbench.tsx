@@ -268,6 +268,12 @@ export function WorkbenchPage(): JSX.Element {
   const sortByDate = useWorkbenchStore((s) => s.sortByDate);
   const moveRow = useWorkbenchStore((s) => s.moveRow);
   const reorderRow = useWorkbenchStore((s) => s.reorderRow);
+  const tabs = useWorkbenchStore((s) => s.tabs);
+  const activeTabId = useWorkbenchStore((s) => s.activeTabId);
+  const newTab = useWorkbenchStore((s) => s.newTab);
+  const switchTab = useWorkbenchStore((s) => s.switchTab);
+  const closeTab = useWorkbenchStore((s) => s.closeTab);
+  const renameTab = useWorkbenchStore((s) => s.renameTab);
   const setMasterRaw = useWorkbenchStore.setState;
   void setMasterRaw;
   const loanDetails = useWorkbenchStore((s) => s.loanDetails);
@@ -361,6 +367,17 @@ export function WorkbenchPage(): JSX.Element {
       } else if ((key === "z" && e.shiftKey) || key === "y") {
         e.preventDefault();
         redo();
+      } else if (e.key === "`") {
+        // Phase 11.19 — cmd/ctrl+` cycles through open tabs.
+        e.preventDefault();
+        const t = useWorkbenchStore.getState();
+        if (t.tabs.length <= 1) return;
+        const idx = t.tabs.findIndex((tab) => tab.id === t.activeTabId);
+        const nextIdx = e.shiftKey
+          ? (idx - 1 + t.tabs.length) % t.tabs.length
+          : (idx + 1) % t.tabs.length;
+        const nextId = t.tabs[nextIdx]?.id;
+        if (nextId) t.switchTab(nextId);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -456,6 +473,51 @@ export function WorkbenchPage(): JSX.Element {
 
   return (
     <main className="mx-auto max-w-7xl px-6 py-6 space-y-6">
+      {/* Phase 11.19 — tab strip */}
+      <div className="flex items-center gap-1 border-b border-border">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => switchTab(t.id)}
+            onDoubleClick={() => {
+              const next = window.prompt("Rename tab", t.name);
+              if (next && next.trim()) renameTab(t.id, next.trim());
+            }}
+            className={cn(
+              "group flex items-center gap-1 rounded-t-md px-3 py-1 text-xs",
+              t.id === activeTabId
+                ? "border border-b-0 border-border bg-card font-medium"
+                : "text-muted-foreground hover:bg-accent",
+            )}
+            title={`${t.name} — double-click to rename`}
+          >
+            <span>{t.name}</span>
+            {tabs.length > 1 && t.id === activeTabId && (
+              <span
+                className="ml-1 rounded p-0.5 hover:bg-destructive/20"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (confirm(`Close "${t.name}"? Its state is lost unless saved.`)) {
+                    closeTab(t.id);
+                  }
+                }}
+              >
+                ×
+              </span>
+            )}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => newTab()}
+          className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent"
+          title="New tab (cmd+` to cycle)"
+        >
+          + Tab
+        </button>
+      </div>
+
       <header className="flex items-end gap-3">
         <div className="flex-1 space-y-1">
           <Input
