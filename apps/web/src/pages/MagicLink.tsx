@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { ApiError, authApi } from "@/auth/api";
 
@@ -122,9 +122,9 @@ function ConsumeView({ token }: { token: string }): JSX.Element {
         <h1 className="text-2xl font-semibold tracking-tight">Magic link is invalid</h1>
         <p className="mt-2 text-sm text-muted-foreground">{error}</p>
         <p className="mt-4 text-sm">
-          <a href="/login/magic" className="underline">
+          <Link to="/login/magic" className="underline">
             Request a new link
-          </a>
+          </Link>
         </p>
       </main>
     );

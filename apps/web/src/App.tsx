@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "@/auth/AuthContext";
@@ -449,17 +449,17 @@ function NotFoundPage(): JSX.Element {
         familiar place.
       </p>
       <div className="mt-6 flex justify-center gap-3 text-sm">
-        <a className="text-primary underline-offset-4 hover:underline" href="/calculators">
+        <Link className="text-primary underline-offset-4 hover:underline" to="/calculators">
           Calculators
-        </a>
+        </Link>
         <span className="text-muted-foreground">·</span>
-        <a className="text-primary underline-offset-4 hover:underline" href="/queue">
+        <Link className="text-primary underline-offset-4 hover:underline" to="/queue">
           My queue
-        </a>
+        </Link>
         <span className="text-muted-foreground">·</span>
-        <a className="text-primary underline-offset-4 hover:underline" href="/exports">
+        <Link className="text-primary underline-offset-4 hover:underline" to="/exports">
           Exports
-        </a>
+        </Link>
       </div>
     </main>
   );
