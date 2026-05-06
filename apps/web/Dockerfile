@@ -69,7 +69,16 @@ LABEL org.opencontainers.image.title="vibecalc-web" \
 # the ingress Caddy is the TLS terminator.
 COPY apps/web/docker/Caddyfile /etc/caddy/Caddyfile
 COPY --from=build /repo/apps/web/dist /srv
+# Runtime base-path injection — substitutes /__VIBE_BASE_PATH__/ in
+# the built SPA bundle before Caddy starts so the same image can serve
+# either '/' (standalone) or '/<prefix>/' (Vibe-Appliance shared Caddy
+# in LAN / Tailscale modes). VITE_BASE_PATH defaults to '/'.
+COPY apps/web/docker/web-entrypoint.sh /usr/local/bin/web-entrypoint.sh
+RUN chmod +x /usr/local/bin/web-entrypoint.sh
 
 EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
   CMD wget -q -O - http://127.0.0.1/ > /dev/null || exit 1
+
+ENTRYPOINT ["/usr/local/bin/web-entrypoint.sh"]
+CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
