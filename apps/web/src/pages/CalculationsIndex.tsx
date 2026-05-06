@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Copy, ExternalLink, History, FileArchive } from "lucide-react";
@@ -155,9 +155,9 @@ export function CalculationsIndexPage(): JSX.Element {
           {query.data && query.data.calculations.length === 0 && (
             <p className="text-sm text-muted-foreground">
               No saved calculations yet. Build one in the{" "}
-              <a className="underline" href="/calculators/tvm-workbench">
+              <Link className="underline" to="/calculators/tvm-workbench">
                 TVM workbench
-              </a>{" "}
+              </Link>{" "}
               or run a tax calculator and save the result.
             </p>
           )}
