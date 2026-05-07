@@ -59,13 +59,6 @@ seed:
         --entrypoint /nodejs/bin/node vibe-calculators-server \
         /app/node_modules/@vibe-calc/db/dist/seed.js
 
-# Issue a one-time first-admin bootstrap token. Run once after install.
-bootstrap:
-    docker compose run --rm --no-deps \
-        -e DATABASE_URL=postgres://${POSTGRES_USER:-vibecalculators}:${POSTGRES_PASSWORD:?must be set in .env}@postgres:5432/${POSTGRES_DB:-vibe_calculators_db} \
-        --entrypoint /nodejs/bin/node vibe-calculators-server \
-        /app/node_modules/@vibe-calc/db/dist/bootstrap-cli.js
-
 # Drop and re-create the database (DESTRUCTIVE — dev / post-restore only).
 reset-db:
     docker compose exec -e PGPASSWORD=$POSTGRES_PASSWORD postgres \

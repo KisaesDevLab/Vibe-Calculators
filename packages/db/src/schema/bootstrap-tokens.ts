@@ -1,22 +1,11 @@
 import { pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 /**
- * One-shot install bootstrap tokens.
- *
- * The operator runs `just bootstrap` (or the upcoming Phase 25
- * installer) once after a fresh install. That generates a 32-byte
- * random token, hashes it with SHA-256, and inserts the hash here.
- * The bare token is printed to stdout exactly once for the operator
- * to paste into /setup.
- *
- * The /api/v1/setup route looks up the supplied token's hash in this
- * table. On successful first-admin creation the row is deleted; the
- * operator must re-run `just bootstrap` if they want to issue another
- * token (which is only useful before any user exists, since the route
- * also refuses to run when users.count > 0).
- *
- * State here survives API restarts — that's the whole reason it's a
- * table rather than in-memory state.
+ * Dead schema — the bootstrap-token install ceremony was retired in
+ * Phase 25.3 (revised) in favor of a seeded default admin with a
+ * forced first-login password change. The table itself is left in
+ * place to avoid a destructive drop migration; nothing in the running
+ * application reads or writes it.
  */
 export const bootstrapTokens = pgTable("bootstrap_tokens", {
   tokenHash: text("token_hash").primaryKey(),

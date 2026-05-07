@@ -28,7 +28,6 @@ cd vibe-calculators
 The installer prompts for:
 
 - Firm name
-- First-admin email
 - Deploy mode (lan / domain / tailscale)
 - Public domain + ACME email (only if domain mode)
 
@@ -39,10 +38,13 @@ It then:
 2. Pulls the Docker images.
 3. Runs `docker compose up -d --build`.
 4. Runs database migrations.
-5. Issues a one-time bootstrap token and prints the URL.
+5. The API container seeds a default admin (`admin@local` /
+   `vibe-admin-changeme`) on first boot when the users table is
+   empty, and prints the credentials to its log.
 
-Open the URL in a browser, paste the bootstrap token, finish the
-setup wizard.
+Open the appliance URL, sign in with the default credentials. You
+will be required to set a new password before any other navigation
+succeeds. The default password works exactly once.
 
 ## Manual install (no installer)
 
@@ -53,11 +55,12 @@ cp .env.example .env
 # Edit .env — set POSTGRES_PASSWORD, REDIS_PASSWORD, VIBE_KMS_KEY
 docker compose up -d --build
 just migrate
-just bootstrap   # prints the bootstrap URL
+docker compose logs --no-log-prefix api | grep -A 6 'default admin seeded'
+# → prints the default admin credentials
 ```
 
-`just bootstrap` is the canonical way to issue the first-admin token;
-the installer just wraps it.
+The seed runs automatically the first time the API starts against an
+empty users table; nothing else needs to happen out-of-band.
 
 ## Upgrading
 

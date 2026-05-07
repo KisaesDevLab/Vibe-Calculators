@@ -388,6 +388,7 @@ interface PublicUser {
   role: Role;
   status: "pending" | "active" | "suspended";
   totpEnabled: boolean;
+  mustChangePassword: boolean;
   permissions: readonly Permission[];
 }
 
@@ -399,6 +400,7 @@ function publicUser(
     role: Role;
     status: string;
     totpEnabled: boolean;
+    mustChangePassword: boolean;
   },
   permissions: readonly Permission[],
 ): PublicUser {
@@ -409,6 +411,7 @@ function publicUser(
     role: row.role,
     status: row.status as PublicUser["status"],
     totpEnabled: row.totpEnabled,
+    mustChangePassword: row.mustChangePassword,
     permissions,
   };
 }

@@ -23,6 +23,9 @@ const { runDeepHealth } = await import("./lib/deep-health.js");
 const { startExportWorker, stopExportWorker } = await import("./lib/export-queue.js");
 const { startWebhookWorker, stopWebhookWorker } = await import("./lib/webhook-queue.js");
 const { startSchedulerWorker, stopSchedulerWorker } = await import("./lib/scheduler-queue.js");
+const { seedDefaultAdminIfEmpty, printDefaultAdminBanner } = await import(
+  "./lib/seed-default-admin.js"
+);
 
 // Side-effect imports: importing @vibe-calc/tax-engine triggers each
 // calculator module's registerCalculator() call, populating the global
@@ -38,6 +41,12 @@ import type { LlmProvider as LlmProviderType } from "@vibe-calc/llm";
 
 // Drizzle DB used by every auth-aware route.
 const { db, pool } = createDatabase({ connectionString: env.DATABASE_URL });
+
+// First-run default-admin seed (Phase 25.3 revised). No-op when any
+// user already exists; otherwise inserts admin@local / default password
+// with must_change_password=true and prints a banner with the creds.
+const seedResult = await seedDefaultAdminIfEmpty(db);
+if (seedResult.seeded) printDefaultAdminBanner();
 
 // KMS for TOTP secret sealing (Phase 2.5) and webhook secret sealing
 // (security-pass-2 H8). VIBE_KMS_KEY is required in production by the
@@ -213,7 +222,7 @@ const emitMagicLinkEmail = async (input: {
 // Number of migration tags shipped with this release; bumped each
 // time a new file lands in packages/db/drizzle/. The deep-health
 // schema-version probe asserts the applied count matches.
-const EXPECTED_MIGRATIONS = 20; // 0000..0019
+const EXPECTED_MIGRATIONS = 21; // 0000..0020
 
 const app = createApp({
   health: {

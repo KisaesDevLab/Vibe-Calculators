@@ -417,7 +417,7 @@ cd vibe-calculators
 ./bin/vibecalc-installer.mjs install
 \`\`\`
 
-The installer prompts for firm info + admin email + deploy mode, then generates secrets, pulls images, runs migrations, prints the bootstrap URL.
+The installer prompts for firm info + deploy mode, then generates secrets, pulls images, and runs migrations. The API container seeds a default admin (\`admin@local.test\` / \`vibe-admin-changeme\`) on first boot when the users table is empty and prints the credentials to its log; sign in and pick a real password when prompted.
 
 ## Upgrade
 
@@ -489,13 +489,9 @@ docker compose up -d
 docker compose logs -f vibe-calculators-server | tail -100
 \`\`\`
 
-## Setup wizard redirects to /login
+## Default admin credentials lost
 
-A user already exists. Log in with the existing admin or restore from backup.
-
-## Setup completes but lands on /health
-
-Stale React Query cache. Hard-reload (Cmd-Shift-R). Fixed in the current SetupWizard.
+The seed only runs against an empty users table. If you've forgotten the default and never set a real password, drop the admin row in \`psql\` and restart the API container — the seeder will recreate \`admin@local.test\` / \`vibe-admin-changeme\` (with \`must_change_password=true\`) on next boot.
 
 ## Magic-link emails not arriving
 

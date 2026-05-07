@@ -8,7 +8,7 @@ import { TOTP, Secret } from "otpauth";
 import { makeTestDb, type TestDb, type TestHarness } from "./db-fixture.js";
 import { createApp } from "../server.js";
 import { hashPassword } from "../lib/password.js";
-import { persistBootstrapToken } from "../lib/bootstrap.js";
+import { seedDefaultAdminIfEmpty, DEFAULT_ADMIN_PASSWORD } from "../lib/seed-default-admin.js";
 import { createKms } from "../lib/kms.js";
 import { sealerFrom } from "../lib/totp.js";
 import { createRateLimiter, memoryStore } from "../lib/rate-limit.js";
@@ -25,7 +25,7 @@ import { SESSION_COOKIE_NAME } from "../lib/cookies.js";
  *     preparer enables 2FA
  *   - the build plan's "readonly user cannot reach any mutation
  *     endpoint" test (every POST/DELETE under /api/v1 is exercised)
- *   - first-run bootstrap (POST /api/v1/setup with the printed token)
+ *   - first-run default-admin seed → forced password change on first login
  *   - rate-limit lockout after 5 failed logins
  */
 
@@ -216,44 +216,49 @@ describe("auth flows — integration", () => {
     expect(r2.status).toBe(401);
   });
 
-  // ----- First-run bootstrap -----------------------------------------
+  // ----- First-run default-admin seed --------------------------------
 
-  it("bootstrap: zero users → setup token redeems for first admin", async () => {
-    // Operator generates a token (mimicking `just bootstrap`).
-    const token = randomBytes(32).toString("hex");
-    const persisted = await persistBootstrapToken(h.db, token);
-    expect(persisted.ok).toBe(true);
+  it("default-admin seed: empty users table → admin@local with mustChangePassword", async () => {
+    const result = await seedDefaultAdminIfEmpty(h.db);
+    expect(result.seeded).toBe(true);
 
-    const r = await request(h.app).post("/api/v1/setup").send({
-      token,
-      email: "founder@firm.test",
-      name: "Founder",
-      password: "Trombone-glacier-7!quiet-river2026",
+    const login = await request(h.app)
+      .post("/api/v1/auth/login")
+      .send({ email: "admin@local.test", password: DEFAULT_ADMIN_PASSWORD });
+    expect(login.status).toBe(200);
+    expect(login.body.user.role).toBe("admin");
+    expect(login.body.user.mustChangePassword).toBe(true);
+
+    const cookie = login.headers["set-cookie"]?.[0] ?? "";
+    expect(cookie).toContain(SESSION_COOKIE_NAME);
+
+    // Forced password change clears the flag.
+    const change = await request(h.app).post("/api/v1/me/password").set("Cookie", cookie).send({
+      currentPassword: DEFAULT_ADMIN_PASSWORD,
+      newPassword: "Trombone-glacier-7!quiet-river2026",
     });
-    expect(r.status).toBe(201);
-    expect(r.body.user.role).toBe("admin");
+    expect(change.status).toBe(204);
 
-    // Bootstrap is now closed; further attempts fail.
-    const r2 = await request(h.app).post("/api/v1/setup").send({
-      token,
-      email: "second@firm.test",
-      name: "Second",
-      password: "Trombone-glacier-7!quiet-river2026",
-    });
-    expect(r2.status).toBe(410);
+    const me = await request(h.app).get("/api/v1/auth/me").set("Cookie", cookie);
+    expect(me.status).toBe(200);
+    expect(me.body.user.mustChangePassword).toBe(false);
+
+    // Default password no longer works.
+    const reLogin = await request(h.app)
+      .post("/api/v1/auth/login")
+      .send({ email: "admin@local.test", password: DEFAULT_ADMIN_PASSWORD });
+    expect(reLogin.status).toBe(401);
   });
 
-  it("bootstrap CLI refuses to issue a token after first user exists", async () => {
+  it("default-admin seed: skipped when any user already exists", async () => {
     await seedUser(h.db, {
       email: "existing@firm.test",
       name: "Existing",
       role: "admin",
       password: "Correct-horse-battery-staple-2026!",
     });
-    const token = randomBytes(32).toString("hex");
-    const persisted = await persistBootstrapToken(h.db, token);
-    expect(persisted.ok).toBe(false);
-    if (!persisted.ok) expect(persisted.reason).toBe("users-exist");
+    const result = await seedDefaultAdminIfEmpty(h.db);
+    expect(result.seeded).toBe(false);
   });
 
   // ----- Rate limit ---------------------------------------------------

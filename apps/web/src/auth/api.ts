@@ -14,6 +14,7 @@ export interface AuthUser {
   role: Role;
   status: "pending" | "active" | "suspended";
   totpEnabled: boolean;
+  mustChangePassword: boolean;
   permissions: readonly Permission[];
 }
 

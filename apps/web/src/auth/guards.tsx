@@ -15,12 +15,17 @@ import { useAuth } from "./AuthContext";
  * client-side; raw `if (user.role === 'admin')` checks are forbidden.
  */
 
+const FORCED_CHANGE_PATH = "/onboarding/change-password";
+
 export function RequireAuth({ children }: { children: ReactNode }): JSX.Element {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
   const location = useLocation();
   if (isLoading) return <FullScreenSpinner label="Loading session…" />;
   if (!isAuthenticated) {
     return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
+  }
+  if (user?.mustChangePassword && location.pathname !== FORCED_CHANGE_PATH) {
+    return <Navigate to={FORCED_CHANGE_PATH} replace />;
   }
   return <>{children}</>;
 }
@@ -32,13 +37,16 @@ export function RequirePerm({
   perm: Permission;
   children: ReactNode;
 }): JSX.Element {
-  const { hasPermission, isLoading, isAuthenticated } = useAuth();
+  const { hasPermission, isLoading, isAuthenticated, user } = useAuth();
   const location = useLocation();
   if (isLoading) return <FullScreenSpinner label="Loading session…" />;
   if (!isAuthenticated) {
     // Preserve the intended target so the post-login redirect lands
     // back here rather than the default /health page.
     return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
+  }
+  if (user?.mustChangePassword && location.pathname !== FORCED_CHANGE_PATH) {
+    return <Navigate to={FORCED_CHANGE_PATH} replace />;
   }
   if (!hasPermission(perm)) {
     return (

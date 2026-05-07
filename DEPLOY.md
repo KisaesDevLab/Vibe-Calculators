@@ -39,8 +39,8 @@ Disk budget at 50 active staff CPAs after 12 months:
    - Optional: `ANTHROPIC_API_KEY` + `VIBE_LLM_DEFAULT_MODEL` for AI loan-extraction
 3. `just up` (or `docker compose up -d`) — first run pulls images and builds containers (~2–5 min)
 4. `just migrate` — applies Drizzle migrations
-5. `just bootstrap` — prints a one-time setup token to the terminal
-6. Open `http://<host>:<VIBE_HTTP_PORT>/setup` (or `https://<VIBE_DOMAIN>/setup` in domain mode), paste the token, complete the first-admin form.
+5. The API container seeds `admin@local.test` / `vibe-admin-changeme` on first boot when the users table is empty, and logs the credentials. Retrieve with `docker compose logs --no-log-prefix api | grep -A 6 'default admin seeded'`.
+6. Open `http://<host>:<VIBE_HTTP_PORT>/login` (or `https://<VIBE_DOMAIN>/login` in domain mode), sign in with the default credentials, and pick a new password when prompted. The default works exactly once.
 7. Sign in. Visit `/admin/firm-settings` and set firm name, EIN, address, brand color, logo (optional, ≤ 1 MB), PDF footer.
 8. (Optional) Visit `/admin/ai` to verify Anthropic connectivity by sending a test prompt.
 
@@ -110,7 +110,7 @@ The Caddyfile reads the env var at boot and includes the matching snippet from `
 1. `just doctor` — confirm services are running and DB+Redis are healthy
 2. Check container logs: `docker compose logs -f vibe-calculators-server`
 3. The appliance enforces 5-failed-login lockout per `(IP, email)` for 15 min. An admin can clear via `/admin/users` → user detail → "Clear lockout".
-4. Last-resort: re-issue a bootstrap token for the first admin via `just bootstrap` (only works if the bootstrapping user has been removed; re-runs are idempotent).
+4. Last-resort: drop the locked admin row in `psql` and restart the API container — the seeder will re-create `admin@local.test` / `vibe-admin-changeme` (with `must_change_password=true`) the next time it boots against an empty users table.
 
 ### "AI extraction returns 503"
 
@@ -130,7 +130,7 @@ The Caddyfile reads the env var at boot and includes the matching snippet from `
 There is no recovery. The appliance can boot (the env validator will refuse) but historical TOTP secrets and webhook signing secrets are unreadable. Reset path:
 
 1. Restore the most recent backup taken before key loss
-2. If no such backup exists, accept the loss — re-run `just bootstrap`, instruct every user to re-enroll TOTP, re-issue every API key + webhook subscription.
+2. If no such backup exists, accept the loss — wipe the database, let the seeder re-create the default admin on next API boot, instruct every user to re-enroll TOTP, re-issue every API key + webhook subscription.
 
 **Always back up `VIBE_KMS_KEY` to a separate secret store the moment you generate it.**
 
@@ -140,7 +140,7 @@ The build plan called for a few operator-facing items that aren't shipped yet. W
 
 | Build-plan item                                  | Status                                       | Workaround                                                   |
 | ------------------------------------------------ | -------------------------------------------- | ------------------------------------------------------------ |
-| `vibecalc-installer` CLI binary                  | not shipped                                  | use `just up` / `just migrate` / `just bootstrap` instead    |
+| `vibecalc-installer` CLI binary                  | not shipped                                  | use `just up` / `just migrate` instead                       |
 | Encrypted backups + 7d/4w/12m retention rotation | partial — `just backup` works, no encryption | wrap the backup directory with `age` or `gpg`, copy off-host |
 | Restore wizard UI                                | not shipped                                  | use `just restore PATH`                                      |
 | MJML-rendered email templates                    | not shipped                                  | magic-link + invitation emails are plain-text                |

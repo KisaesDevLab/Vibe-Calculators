@@ -20,6 +20,7 @@ describe("users schema", () => {
         "emailDigest",
         "id",
         "lastLoginAt",
+        "mustChangePassword",
         "name",
         "passwordHash",
         "role",

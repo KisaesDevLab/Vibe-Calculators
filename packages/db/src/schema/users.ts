@@ -64,6 +64,13 @@ export const users = pgTable(
      *                  magic-link emails ignore this setting.
      */
     emailDigest: text("email_digest").notNull().default("immediate"),
+    /**
+     * Phase 25.3 (revised) — set true when the admin row was seeded
+     * with the install-time default password. The /login + /me payloads
+     * mirror this; the SPA gate redirects to /onboarding/change-password
+     * until POST /api/v1/me/password clears it.
+     */
+    mustChangePassword: boolean("must_change_password").notNull().default(false),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
   },
   (t) => ({

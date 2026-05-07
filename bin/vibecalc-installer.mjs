@@ -161,23 +161,15 @@ async function cmdInstall(opts) {
     repoDir,
   );
 
-  console.log("\n→ Issuing first-admin bootstrap token");
-  const out = capture(
-    "docker",
-    [
-      "compose",
-      "run",
-      "--rm",
-      "--no-deps",
-      "--entrypoint",
-      "/nodejs/bin/node",
-      "vibe-calculators-server",
-      "/app/node_modules/@vibe-calc/db/dist/bootstrap-cli.js",
-    ],
-    repoDir,
+  console.log("\n→ Default admin seeded on first API boot");
+  console.log(
+    "  When the API container starts it prints the default admin credentials\n" +
+      "  (admin@local.test / vibe-admin-changeme) to its log. View them with:\n\n" +
+      "    docker compose logs --no-log-prefix api | grep -A 6 'default admin seeded'\n\n" +
+      "  Sign in at /login; you will be required to set a new password before\n" +
+      "  anything else. The default works exactly once.",
   );
-  console.log(out.stdout);
-  console.log("\nInstall complete. Open the URL above to set up the first admin user.");
+  console.log("\nInstall complete.");
   return 0;
 }
 

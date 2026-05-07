@@ -13,28 +13,22 @@ docker compose logs -f vibe-calculators-server | tail -100
 The deep doctor probe should print `OK: every probe is green.` when
 everything's working.
 
-## Setup wizard redirects to /login
+## Default admin credentials are lost
 
-You ran `just bootstrap`, got a token, but the setup page bounces
-back to login.
+The seeder only runs when the users table is empty. If you never set a
+real password and have forgotten the default, the recovery is to wipe
+the admin row in `psql` and restart the API container — the seeder
+will recreate `admin@local.test` / `vibe-admin-changeme` (with
+`must_change_password=true`) on next boot. If multiple users exist,
+restore from a backup or follow the "Wipe and reinstall" recipe below.
 
-**Cause**: a user already exists. The setup wizard refuses to fire
-when the database has any user.
+## Sign-in redirects to /onboarding/change-password
 
-**Fix**: log in with the existing admin. If you've lost that admin's
-credentials, restore from a backup or follow the "Wipe and reinstall"
-recipe below.
-
-## Setup completes but lands on /health (or blank screen)
-
-**Cause**: stale React Query cache. The login query for `["auth", "me"]`
-was populated with `null` at app boot, and the SPA didn't refetch
-after `/setup` succeeded.
-
-**Fix**: the bug is fixed in the current SetupWizard, which calls
-`invalidateQueries` + `refetchQueries` before navigating. If you're
-on an older build, hard-reload (Cmd-Shift-R) after setup completes
-to force the cache refetch.
+Working as designed. The seeded default admin carries
+`must_change_password=true`; the SPA gates every other route until
+you set a real password. Pick a ≥12-character password that isn't on
+the common-list and submit — you will land on `/calculators` and
+the flag is cleared.
 
 ## Magic-link emails are not arriving
 

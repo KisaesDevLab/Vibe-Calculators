@@ -21,11 +21,13 @@ just up
 # 3. Apply migrations
 just migrate
 
-# 4. Generate the first-admin bootstrap token
-just bootstrap
-# → prints something like: vibe_setup_8f3c…
+# 4. Sign in with the default admin (printed in the api log on first boot)
+#    email:    admin@local.test
+#    password: vibe-admin-changeme
+#    You will be required to set a new password on first login.
+docker compose logs --no-log-prefix api | grep -A 6 'default admin seeded'
 
-# 5. Visit http://localhost — the setup wizard catches the redirect
+# 5. Visit http://localhost/login
 ```
 
 ## Architecture
@@ -71,7 +73,6 @@ just status      # docker compose ps
 just psql        # psql shell against the running Postgres
 just migrate     # apply Drizzle migrations
 just seed        # dev fixtures
-just bootstrap   # one-time first-admin token (run once after install)
 just backup      # pg_dump + uploads → ./backups/<timestamp>/
 just restore <dir>   # restore from a backup (verifies checksums)
 just test        # run every workspace's tests

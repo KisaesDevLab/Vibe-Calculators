@@ -90,7 +90,10 @@ export function buildMeRouter(deps: MeRouteDeps): Router {
     if (!policy.ok) return problem(res, 422, "Password policy", policy.message);
 
     const passwordHash = await hashPassword(parsed.data.newPassword);
-    await deps.db.update(users).set({ passwordHash }).where(eq(users.id, user.id));
+    await deps.db
+      .update(users)
+      .set({ passwordHash, mustChangePassword: false })
+      .where(eq(users.id, user.id));
     await recordAuthEvent(deps.db, {
       kind: user.passwordHash ? "password.changed" : "password.set",
       userId: user.id,

@@ -141,6 +141,13 @@
       "when": 1778961600000,
       "tag": "0019_ai_provider_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1779048000000,
+      "tag": "0020_must_change_password",
+      "breakpoints": true
     }
   ]
 }
