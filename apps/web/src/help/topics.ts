@@ -495,9 +495,9 @@ The seed only runs against an empty users table. If you've forgotten the default
 
 ## Magic-link emails not arriving
 
-1. Check provider configured: \`docker compose logs vibe-calculators-server | grep "email provider"\`.
-2. If "not configured", the URL is in API logs — copy and send.
-3. Test SMTP host reachability from inside the container.
+1. Visit **Admin → Email** and click **Send test**. If the test succeeds and magic-link still doesn't arrive, the receiving mailbox is filtering — check spam / sender reputation.
+2. If no provider is configured, the URL is in API logs — \`docker compose logs vibe-calculators-server | grep "magic-link issued"\` — copy and paste it.
+3. For SMTP, test host reachability from inside the container with \`docker compose exec vibe-calculators-server nc -vz <host> <port>\`.
 
 ## Slow exports
 

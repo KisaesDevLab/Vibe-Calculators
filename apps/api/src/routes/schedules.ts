@@ -28,7 +28,7 @@ import { recordAuditEvent } from "../lib/audit-events.js";
 
 export interface ScheduleRouteDeps {
   db: Database;
-  emailProvider?: EmailProvider | undefined;
+  resolveEmailProvider?: (() => Promise<EmailProvider | null>) | undefined;
   /**
    * Optional recipient-domain allowlist. When set, schedule recipient
    * addresses must end in one of the listed domains. Prevents abusing
@@ -308,9 +308,10 @@ async function runOneSchedule(
   let status: "delivered" | "failed" = "failed";
   let details: Record<string, unknown> = {};
 
-  if (deps.emailProvider) {
+  const provider = deps.resolveEmailProvider ? await deps.resolveEmailProvider() : null;
+  if (provider) {
     try {
-      const result = await deps.emailProvider.send({
+      const result = await provider.send({
         to: s.recipients,
         subject: renderTemplate(s.subject, {
           calc: calcOrNull,
@@ -324,7 +325,7 @@ async function runOneSchedule(
     } catch (err) {
       details = {
         error: err instanceof Error ? err.message : String(err),
-        provider: deps.emailProvider?.name,
+        provider: provider.name,
       };
     }
   } else {

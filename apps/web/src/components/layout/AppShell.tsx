@@ -61,6 +61,7 @@ const NAV_ITEMS: NavItem[] = [
     permission: "settings:write",
   },
   { to: "/admin/ai", label: "AI provider", icon: Settings, permission: "ai:configure" },
+  { to: "/admin/email", label: "Email", icon: Settings, permission: "settings:write" },
   { to: "/admin/ai-prompts", label: "AI prompts", icon: Settings, permission: "ai:configure" },
   { to: "/admin/backups", label: "Backups", icon: Settings, permission: "backup:create" },
   { to: "/admin/tax-tables", label: "Tax tables", icon: Settings, permission: "settings:read" },

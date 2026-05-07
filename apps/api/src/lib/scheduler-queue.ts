@@ -36,7 +36,7 @@ const BATCH_SIZE = 50;
 export interface SchedulerQueueDeps {
   db: Database;
   redis: ConnectionOptions;
-  emailProvider?: EmailProvider | undefined;
+  resolveEmailProvider?: (() => Promise<EmailProvider | null>) | undefined;
 }
 
 let queueInstance: Queue | undefined;
@@ -173,7 +173,8 @@ async function processScheduleInstance(
     },
   });
   // Email notification — best-effort; missing provider is fine.
-  if (deps.emailProvider && schedule.recipients.trim().length > 0) {
+  const provider = deps.resolveEmailProvider ? await deps.resolveEmailProvider() : null;
+  if (provider && schedule.recipients.trim().length > 0) {
     try {
       const firm = await loadFirmSettings(deps.db).catch(() => null);
       const { renderScheduledRecomputeEmail } = await import("@vibe-calc/email");
@@ -196,7 +197,7 @@ async function processScheduleInstance(
         .map((r) => r.trim())
         .filter((r) => r.length > 0);
       for (const to of recipients) {
-        await deps.emailProvider.send({
+        await provider.send({
           to,
           subject: rendered.subject,
           text: rendered.text,

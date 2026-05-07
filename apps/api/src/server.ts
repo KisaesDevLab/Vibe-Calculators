@@ -26,6 +26,7 @@ import { buildWebhooksRouter, type WebhooksRouteDeps } from "./routes/webhooks.j
 import { buildCalculatorsRouter, type CalculatorsRouteDeps } from "./routes/calculators.js";
 import { buildWorkbenchRouter } from "./routes/workbench.js";
 import { buildAdminAiRouter, type AdminAiRouteDeps } from "./routes/admin-ai.js";
+import { buildAdminEmailRouter, type AdminEmailRouteDeps } from "./routes/admin-email.js";
 import { buildBulkExportRouter, type BulkExportRouteDeps } from "./routes/bulk-export.js";
 import { buildExportsRouter, type ExportRouteDeps } from "./routes/exports.js";
 import { buildAdminBackupsRouter, type AdminBackupsRouteDeps } from "./routes/admin-backups.js";
@@ -64,6 +65,7 @@ export interface ServerOptions {
       WebhooksRouteDeps &
       CalculatorsRouteDeps &
       AdminAiRouteDeps &
+      AdminEmailRouteDeps &
       AdminAiPromptsRouteDeps &
       FirmSettingsRouteDeps &
       BulkExportRouteDeps &
@@ -117,8 +119,8 @@ export function createApp(options: ServerOptions = {}): Express {
       "/api/v1/workbench",
       buildWorkbenchRouter({
         db: options.auth.routes.db,
-        ...(options.auth.routes.emailProvider
-          ? { emailProvider: options.auth.routes.emailProvider }
+        ...(options.auth.routes.resolveEmailProvider
+          ? { resolveEmailProvider: options.auth.routes.resolveEmailProvider }
           : {}),
       }),
     );
@@ -133,6 +135,13 @@ export function createApp(options: ServerOptions = {}): Express {
       }),
     );
     app.use("/api/v1/admin/firm-settings", buildFirmSettingsRouter(options.auth.routes));
+    app.use(
+      "/api/v1/admin/email",
+      buildAdminEmailRouter({
+        db: options.auth.routes.db,
+        kms: options.auth.routes.kms,
+      }),
+    );
     app.use("/api/v1/admin/ai-prompts", buildAdminAiPromptsRouter(options.auth.routes));
     app.use("/api/v1/calculations/bulk", buildBulkExportRouter(options.auth.routes));
     app.use(

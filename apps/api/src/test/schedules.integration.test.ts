@@ -44,7 +44,7 @@ function buildAppHarness(db: TestDb): AppHarness {
         totpSealer: sealerFrom(testKms),
         kms: testKms,
         emitMagicLinkEmail: () => undefined,
-        emailProvider: mock,
+        resolveEmailProvider: async () => mock,
       },
     },
   });

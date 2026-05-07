@@ -31,6 +31,9 @@ const AdminAuditLogPage = lazy(() =>
   import("@/pages/AdminAuditLog").then((m) => ({ default: m.AdminAuditLogPage })),
 );
 const AdminAiPage = lazy(() => import("@/pages/AdminAi").then((m) => ({ default: m.AdminAiPage })));
+const AdminEmailPage = lazy(() =>
+  import("@/pages/AdminEmail").then((m) => ({ default: m.AdminEmailPage })),
+);
 const AdminFirmSettingsPage = lazy(() =>
   import("@/pages/AdminFirmSettings").then((m) => ({ default: m.AdminFirmSettingsPage })),
 );
@@ -341,6 +344,18 @@ export function App(): JSX.Element {
                       <ShelledRoute>
                         <Suspense fallback={<RouteSpinner />}>
                           <AdminAiPage />
+                        </Suspense>
+                      </ShelledRoute>
+                    </RequirePerm>
+                  }
+                />
+                <Route
+                  path="/admin/email"
+                  element={
+                    <RequirePerm perm="settings:write">
+                      <ShelledRoute>
+                        <Suspense fallback={<RouteSpinner />}>
+                          <AdminEmailPage />
                         </Suspense>
                       </ShelledRoute>
                     </RequirePerm>

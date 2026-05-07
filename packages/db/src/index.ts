@@ -33,6 +33,7 @@ export * from "./schema/ai-prompts";
 export * from "./schema/export-jobs";
 export * from "./schema/webhook-deliveries";
 export * from "./schema/ai-provider-settings";
+export * from "./schema/email-provider-settings";
 
 // Convenience re-export so consumers can pass `db.query.<table>` etc.
 export * as schema from "./schema/index";

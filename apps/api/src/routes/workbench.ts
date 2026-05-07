@@ -122,7 +122,7 @@ const bodySchema = z.object({
  */
 export interface WorkbenchRouteDeps {
   db?: Database;
-  emailProvider?: EmailProvider | undefined;
+  resolveEmailProvider?: (() => Promise<EmailProvider | null>) | undefined;
 }
 
 /** Parse + validate the workbench body and run the engine. Returns
@@ -208,7 +208,7 @@ async function buildScheduleFromBody(body: unknown): Promise<ScheduleBuildResult
 export function buildWorkbenchRouter(deps: WorkbenchRouteDeps = {}): Router {
   const router = Router();
   const db = deps.db;
-  const emailProvider = deps.emailProvider;
+  const resolveEmail = deps.resolveEmailProvider;
 
   router.post("/pdf", async (req: Request, res: Response) => {
     if (!req.user) return problem(res, 401, "Unauthorized", "Authentication required");
@@ -319,12 +319,13 @@ export function buildWorkbenchRouter(deps: WorkbenchRouteDeps = {}): Router {
   // Phase 13.9 — email this PDF.
   router.post("/email-pdf", async (req: Request, res: Response) => {
     if (!req.user) return problem(res, 401, "Unauthorized", "Authentication required");
+    const emailProvider = resolveEmail ? await resolveEmail() : null;
     if (!emailProvider) {
       return problem(
         res,
         503,
         "Email provider not configured",
-        "No SMTP / Postmark / EmailIt provider available. Set provider env in .env and restart.",
+        "No SMTP / Postmark / EmailIt provider available. Configure one under Admin → Email or set the matching .env vars.",
       );
     }
     const recipientSchema = z.object({

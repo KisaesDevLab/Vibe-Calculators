@@ -80,7 +80,7 @@ just test        # run every workspace's tests
 
 ## Email / AI / AFR configuration
 
-- **Email** — set `VIBE_EMAIL_PROVIDER` to `smtp`, `postmark`, or `emailit` and fill the matching block in `.env`. The factory rejects misconfigured environments at boot.
+- **Email** — configure under **Admin → Email** in the UI (DB-backed, KMS-sealed secrets, test-send button). The matching `.env` block (`VIBE_EMAIL_PROVIDER` + `SMTP_*` / `POSTMARK_*` / `EMAILIT_*`) is honored as a fallback when the DB row is empty.
 - **AI extraction** — set `ANTHROPIC_API_KEY` to enable. Without it, AI features return 503; the rest of the app works fine.
 - **IRS AFR feed** — set `VIBE_AFR_FEED_URL` to your preferred mirror; the IRS does not publish a JSON feed natively. The fetcher is idempotent on re-run.
 

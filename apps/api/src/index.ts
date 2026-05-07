@@ -16,9 +16,15 @@ const { createKms } = await import("./lib/kms.js");
 const { sealerFrom } = await import("./lib/totp.js");
 const { createRateLimiter, redisStore } = await import("./lib/rate-limit.js");
 const { Redis } = await import("ioredis");
-const { createEmailProviderFromEnv, renderMagicLinkEmail } = await import("@vibe-calc/email");
+const { renderMagicLinkEmail } = await import("@vibe-calc/email");
 const { loadFirmSettings } = await import("./lib/firm-settings.js");
-type EmailProviderType = Awaited<ReturnType<typeof createEmailProviderFromEnv>>;
+const { resolveEmailProvider, readEmailEnv } = await import("./lib/email-provider-resolver.js");
+type EmailProvider =
+  Awaited<ReturnType<typeof resolveEmailProvider>> extends infer R
+    ? R extends { provider: infer P }
+      ? P
+      : never
+    : never;
 const { runDeepHealth } = await import("./lib/deep-health.js");
 const { startExportWorker, stopExportWorker } = await import("./lib/export-queue.js");
 const { startWebhookWorker, stopWebhookWorker } = await import("./lib/webhook-queue.js");
@@ -76,19 +82,29 @@ rateLimitRedis.on("error", (err) => {
 });
 const rateLimiter = createRateLimiter(redisStore(rateLimitRedis));
 
-// Optional email provider. The factory throws on misconfigured envs
-// (e.g. provider=smtp but SMTP_HOST blank), which is normal in dev:
-// log the magic-link details so the operator can copy the URL by
-// hand. In production this surfaces as a warning at boot, and the
-// firm operator wires real credentials in their .env.
-let emailProvider: EmailProviderType | null = null;
+// Email provider — resolved per-send rather than cached at boot, so
+// admin updates under /admin/email take effect without a restart. The
+// resolver consults the DB-backed singleton row first, then falls
+// back to the .env block. Returns null when neither is configured.
+const resolveEmail = async (): Promise<EmailProvider | null> => {
+  const r = await resolveEmailProvider(db, kms, readEmailEnv());
+  return r ? r.provider : null;
+};
+// Boot-time probe: log whichever provider (if any) is currently
+// resolvable so the operator can sanity-check at deploy time.
 try {
-  emailProvider = createEmailProviderFromEnv(process.env);
-  logger.info({ provider: process.env.VIBE_EMAIL_PROVIDER ?? "smtp" }, "email provider ready");
+  const initial = await resolveEmail();
+  if (initial) {
+    logger.info({ provider: initial.name }, "email provider ready (resolved at boot)");
+  } else {
+    logger.warn(
+      "email provider not configured — magic-link emails will be logged only. Configure under Admin → Email or set the SMTP_*/POSTMARK_*/EMAILIT_* env block.",
+    );
+  }
 } catch (err) {
   logger.warn(
     { reason: err instanceof Error ? err.message : String(err) },
-    "email provider not configured — magic-link emails will be logged only",
+    "email provider resolver threw at boot — falling back to log-only",
   );
 }
 
@@ -183,7 +199,8 @@ const emitMagicLinkEmail = async (input: {
   consumeUrl: string;
   expiresAt: Date;
 }): Promise<void> => {
-  if (emailProvider) {
+  const provider = await resolveEmail();
+  if (provider) {
     try {
       // Phase 22.6 — load firm-settings so the email shows the firm's
       // brand color + name in the header. Best-effort: a DB hiccup
@@ -204,7 +221,7 @@ const emitMagicLinkEmail = async (input: {
           firmFooter: firm?.pdfFooter || undefined,
         },
       });
-      await emailProvider.send({
+      await provider.send({
         to: input.email,
         subject: rendered.subject,
         text: rendered.text,
@@ -231,7 +248,7 @@ const emitMagicLinkEmail = async (input: {
 // Number of migration tags shipped with this release; bumped each
 // time a new file lands in packages/db/drizzle/. The deep-health
 // schema-version probe asserts the applied count matches.
-const EXPECTED_MIGRATIONS = 21; // 0000..0020
+const EXPECTED_MIGRATIONS = 22; // 0000..0021
 
 const app = createApp({
   health: {
@@ -260,7 +277,7 @@ const app = createApp({
       kms,
       emitMagicLinkEmail,
       llmProvider,
-      ...(emailProvider ? { emailProvider } : {}),
+      resolveEmailProvider: resolveEmail,
       exportQueue: {
         db,
         redis: { url: env.REDIS_URL },
@@ -289,7 +306,7 @@ logger.info("webhook worker started");
 await startSchedulerWorker({
   db,
   redis: { url: env.REDIS_URL },
-  ...(emailProvider ? { emailProvider } : {}),
+  resolveEmailProvider: resolveEmail,
 });
 logger.info("scheduler worker started");
 
