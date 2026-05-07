@@ -3,6 +3,9 @@ export const DB_PACKAGE = "@vibe-calc/db" as const;
 // Connection factory + the Drizzle Database type.
 export * from "./connection";
 
+// Migration runner — exported so the API can apply migrations on boot.
+export { applyMigrations } from "./migrate";
+
 // Soft-delete helpers.
 export * from "./soft-delete";
 export * from "./tax-table-resolver";

@@ -42,9 +42,18 @@ import type { LlmProvider as LlmProviderType } from "@vibe-calc/llm";
 // Drizzle DB used by every auth-aware route.
 const { db, pool } = createDatabase({ connectionString: env.DATABASE_URL });
 
+// Apply pending Drizzle migrations on every boot. The Vibe-Appliance
+// bootstrap creates the database but does not run migrations, so the
+// API has to be self-sufficient here — otherwise the seeder below
+// crashes against a fresh, empty schema. drizzle-orm's migrator is
+// idempotent: already-applied migrations are no-ops.
+const { applyMigrations } = await import("@vibe-calc/db");
+await applyMigrations(db);
+
 // First-run default-admin seed (Phase 25.3 revised). No-op when any
-// user already exists; otherwise inserts admin@local / default password
-// with must_change_password=true and prints a banner with the creds.
+// user already exists; otherwise inserts admin@local.test / default
+// password with must_change_password=true and prints a banner with
+// the credentials.
 const seedResult = await seedDefaultAdminIfEmpty(db);
 if (seedResult.seeded) printDefaultAdminBanner();
 
