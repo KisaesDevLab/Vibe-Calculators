@@ -17,14 +17,11 @@ const { sealerFrom } = await import("./lib/totp.js");
 const { createRateLimiter, redisStore } = await import("./lib/rate-limit.js");
 const { Redis } = await import("ioredis");
 const { renderMagicLinkEmail } = await import("@vibe-calc/email");
+import type { EmailProvider } from "@vibe-calc/email";
 const { loadFirmSettings } = await import("./lib/firm-settings.js");
-const { resolveEmailProvider, readEmailEnv } = await import("./lib/email-provider-resolver.js");
-type EmailProvider =
-  Awaited<ReturnType<typeof resolveEmailProvider>> extends infer R
-    ? R extends { provider: infer P }
-      ? P
-      : never
-    : never;
+const { resolveEmailProvider, peekEmailProviderName, readEmailEnv } = await import(
+  "./lib/email-provider-resolver.js"
+);
 const { runDeepHealth } = await import("./lib/deep-health.js");
 const { startExportWorker, stopExportWorker } = await import("./lib/export-queue.js");
 const { startWebhookWorker, stopWebhookWorker } = await import("./lib/webhook-queue.js");
@@ -82,20 +79,16 @@ rateLimitRedis.on("error", (err) => {
 });
 const rateLimiter = createRateLimiter(redisStore(rateLimitRedis));
 
-// Email provider — resolved per-send rather than cached at boot, so
-// admin updates under /admin/email take effect without a restart. The
-// resolver consults the DB-backed singleton row first, then falls
-// back to the .env block. Returns null when neither is configured.
+// Resolved per-send so admin edits in /admin/email take effect without
+// a restart. DB-backed singleton wins; .env is the fallback.
 const resolveEmail = async (): Promise<EmailProvider | null> => {
   const r = await resolveEmailProvider(db, kms, readEmailEnv());
   return r ? r.provider : null;
 };
-// Boot-time probe: log whichever provider (if any) is currently
-// resolvable so the operator can sanity-check at deploy time.
 try {
-  const initial = await resolveEmail();
-  if (initial) {
-    logger.info({ provider: initial.name }, "email provider ready (resolved at boot)");
+  const peek = await peekEmailProviderName(db, readEmailEnv());
+  if (peek) {
+    logger.info({ provider: peek.providerName, source: peek.source }, "email provider configured");
   } else {
     logger.warn(
       "email provider not configured — magic-link emails will be logged only. Configure under Admin → Email or set the SMTP_*/POSTMARK_*/EMAILIT_* env block.",
@@ -104,7 +97,7 @@ try {
 } catch (err) {
   logger.warn(
     { reason: err instanceof Error ? err.message : String(err) },
-    "email provider resolver threw at boot — falling back to log-only",
+    "email provider config check failed — falling back to log-only",
   );
 }
 

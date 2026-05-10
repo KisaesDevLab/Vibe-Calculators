@@ -138,23 +138,19 @@ function SettingsForm({
   const [activeProvider, setActiveProvider] = useState<Provider | "none">(
     s.activeProvider ?? "none",
   );
-  // SMTP fields
   const [smtpHost, setSmtpHost] = useState(s.smtpHost ?? "");
   const [smtpPort, setSmtpPort] = useState<string>(s.smtpPort != null ? String(s.smtpPort) : "587");
   const [smtpUser, setSmtpUser] = useState(s.smtpUser ?? "");
   const [smtpPass, setSmtpPass] = useState("");
   const [smtpSecure, setSmtpSecure] = useState(s.smtpSecure);
   const [smtpFrom, setSmtpFrom] = useState(s.smtpFrom ?? "");
-  // Postmark
   const [postmarkToken, setPostmarkToken] = useState("");
   const [postmarkFrom, setPostmarkFrom] = useState(s.postmarkFrom ?? "");
   const [postmarkStream, setPostmarkStream] = useState(s.postmarkStream ?? "outbound");
-  // EmailIt
   const [emailitKey, setEmailitKey] = useState("");
   const [emailitFrom, setEmailitFrom] = useState(s.emailitFrom ?? "");
   const [emailitEndpoint, setEmailitEndpoint] = useState(s.emailitEndpoint ?? "");
 
-  // Re-sync local state when data refreshes (e.g. after save).
   useEffect(() => {
     setActiveProvider(s.activeProvider ?? "none");
     setSmtpHost(s.smtpHost ?? "");

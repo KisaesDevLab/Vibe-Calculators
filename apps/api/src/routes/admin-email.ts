@@ -132,7 +132,6 @@ export function buildAdminEmailRouter(deps: AdminEmailRouteDeps): Router {
         updatedBy: req.user.id,
       };
       if (body.activeProvider !== undefined) patch.activeProvider = body.activeProvider;
-      // SMTP
       if (body.smtpHost !== undefined) patch.smtpHost = body.smtpHost || null;
       if (body.smtpPort !== undefined) patch.smtpPort = body.smtpPort;
       if (body.smtpUser !== undefined) patch.smtpUser = body.smtpUser || null;
@@ -143,7 +142,6 @@ export function buildAdminEmailRouter(deps: AdminEmailRouteDeps): Router {
       } else if (body.smtpPass && body.smtpPass.length > 0) {
         patch.smtpPassSealed = deps.kms.encrypt(body.smtpPass);
       }
-      // Postmark
       if (body.postmarkFrom !== undefined) patch.postmarkFrom = body.postmarkFrom || null;
       if (body.postmarkStream !== undefined) patch.postmarkStream = body.postmarkStream || null;
       if (body.clearPostmarkToken === true) {
@@ -151,7 +149,6 @@ export function buildAdminEmailRouter(deps: AdminEmailRouteDeps): Router {
       } else if (body.postmarkToken && body.postmarkToken.length > 0) {
         patch.postmarkTokenSealed = deps.kms.encrypt(body.postmarkToken);
       }
-      // EmailIt
       if (body.emailitFrom !== undefined) patch.emailitFrom = body.emailitFrom || null;
       if (body.emailitEndpoint !== undefined) patch.emailitEndpoint = body.emailitEndpoint || null;
       if (body.clearEmailitKey === true) {
@@ -160,16 +157,14 @@ export function buildAdminEmailRouter(deps: AdminEmailRouteDeps): Router {
         patch.emailitKeySealed = deps.kms.encrypt(body.emailitKey);
       }
 
-      // Ensure the singleton row exists. The migration seeds it, but
-      // TRUNCATE CASCADE through the updated_by FK can wipe it (e.g.
-      // in test fixtures), so we lazy-create defensively before update.
+      // TRUNCATE CASCADE through updated_by FK can wipe the singleton row
+      // in test fixtures — lazy-create before UPDATE so PUT stays safe.
       await getEmailProviderSettings(deps.db);
       await deps.db
         .update(emailProviderSettings)
         .set(patch)
         .where(eq(emailProviderSettings.id, EMAIL_PROVIDER_SETTINGS_ID));
 
-      // Audit which fields changed (never the values).
       await recordAuditEvent(deps.db, {
         action: "client.update",
         entityKind: "client",

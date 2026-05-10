@@ -196,14 +196,16 @@ async function processScheduleInstance(
         .split(",")
         .map((r) => r.trim())
         .filter((r) => r.length > 0);
-      for (const to of recipients) {
-        await provider.send({
-          to,
-          subject: rendered.subject,
-          text: rendered.text,
-          html: rendered.html,
-        });
-      }
+      await Promise.allSettled(
+        recipients.map((to) =>
+          provider.send({
+            to,
+            subject: rendered.subject,
+            text: rendered.text,
+            html: rendered.html,
+          }),
+        ),
+      );
     } catch (err) {
       logger.warn(
         { scheduleId: schedule.id, err: err instanceof Error ? err.message : String(err) },

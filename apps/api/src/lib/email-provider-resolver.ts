@@ -5,7 +5,12 @@ import {
   type EmailProviderSettingsRow,
   type Database,
 } from "@vibe-calc/db";
-import { createEmailProvider, type EmailProvider } from "@vibe-calc/email";
+import {
+  createEmailProvider,
+  createEmailProviderFromEnv,
+  type EmailProvider,
+  type ProviderName,
+} from "@vibe-calc/email";
 import type { KmsClient } from "./kms.js";
 import { logger } from "./logger.js";
 
@@ -38,7 +43,7 @@ export interface EmailResolverEnv {
 export interface ResolvedEmailProvider {
   provider: EmailProvider;
   source: "db" | "env";
-  providerName: "smtp" | "postmark" | "emailit";
+  providerName: ProviderName;
 }
 
 /**
@@ -79,8 +84,6 @@ export async function resolveEmailProvider(
 ): Promise<ResolvedEmailProvider | null> {
   const settings = await getEmailProviderSettings(db);
 
-  // 1. DB-driven config wins when active_provider is set and the
-  //    minimum required fields are populated.
   if (settings.activeProvider === "smtp") {
     const built = buildSmtpFromDb(settings, kms);
     if (built) return { provider: built, source: "db", providerName: "smtp" };
@@ -94,8 +97,30 @@ export async function resolveEmailProvider(
     if (built) return { provider: built, source: "db", providerName: "emailit" };
   }
 
-  // 2. Environment fallback.
   return resolveFromEnv(env);
+}
+
+/**
+ * Cheap "what's configured" probe — no KMS decrypt, no transport build.
+ * Used at boot to log the active provider without paying the per-send cost.
+ */
+export async function peekEmailProviderName(
+  db: Database,
+  env: EmailResolverEnv,
+): Promise<{ source: "db" | "env"; providerName: ProviderName } | null> {
+  const settings = await getEmailProviderSettings(db);
+  if (
+    settings.activeProvider === "smtp" ||
+    settings.activeProvider === "postmark" ||
+    settings.activeProvider === "emailit"
+  ) {
+    return { source: "db", providerName: settings.activeProvider };
+  }
+  const envName = env.VIBE_EMAIL_PROVIDER;
+  if (envName === "smtp" || envName === "postmark" || envName === "emailit") {
+    return { source: "env", providerName: envName };
+  }
+  return null;
 }
 
 function buildSmtpFromDb(s: EmailProviderSettingsRow, kms: KmsClient): EmailProvider | null {
@@ -186,60 +211,17 @@ function buildEmailItFromDb(s: EmailProviderSettingsRow, kms: KmsClient): EmailP
 }
 
 function resolveFromEnv(env: EmailResolverEnv): ResolvedEmailProvider | null {
-  const provider = env.VIBE_EMAIL_PROVIDER ?? "smtp";
+  const name = env.VIBE_EMAIL_PROVIDER ?? "smtp";
+  if (name !== "smtp" && name !== "postmark" && name !== "emailit") return null;
   try {
-    if (provider === "smtp") {
-      if (!env.SMTP_HOST || !env.SMTP_USER || !env.SMTP_PASS || !env.SMTP_FROM) return null;
-      return {
-        provider: createEmailProvider({
-          provider: "smtp",
-          smtp: {
-            host: env.SMTP_HOST,
-            port: env.SMTP_PORT ? Number(env.SMTP_PORT) : 587,
-            user: env.SMTP_USER,
-            pass: env.SMTP_PASS,
-            secure: env.SMTP_SECURE === "true",
-            from: env.SMTP_FROM,
-          },
-        }),
-        source: "env",
-        providerName: "smtp",
-      };
-    }
-    if (provider === "postmark") {
-      if (!env.POSTMARK_SERVER_TOKEN || !env.POSTMARK_FROM) return null;
-      return {
-        provider: createEmailProvider({
-          provider: "postmark",
-          postmark: {
-            serverToken: env.POSTMARK_SERVER_TOKEN,
-            from: env.POSTMARK_FROM,
-            ...(env.POSTMARK_STREAM ? { messageStream: env.POSTMARK_STREAM } : {}),
-          },
-        }),
-        source: "env",
-        providerName: "postmark",
-      };
-    }
-    if (provider === "emailit") {
-      if (!env.EMAILIT_API_KEY || !env.EMAILIT_FROM) return null;
-      return {
-        provider: createEmailProvider({
-          provider: "emailit",
-          emailit: {
-            apiKey: env.EMAILIT_API_KEY,
-            from: env.EMAILIT_FROM,
-            ...(env.EMAILIT_ENDPOINT ? { endpoint: env.EMAILIT_ENDPOINT } : {}),
-          },
-        }),
-        source: "env",
-        providerName: "emailit",
-      };
-    }
+    return {
+      provider: createEmailProviderFromEnv(env as Record<string, string | undefined>),
+      source: "env",
+      providerName: name,
+    };
   } catch {
     return null;
   }
-  return null;
 }
 
 export function readEmailEnv(): EmailResolverEnv {
