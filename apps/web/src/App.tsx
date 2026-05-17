@@ -106,7 +106,17 @@ export function App(): JSX.Element {
               <Navigate to="/login" /> escapes the prefix and the
               browser ends up at /login instead of /<slug>/login.
             */}
-            <BrowserRouter basename={import.meta.env.BASE_URL}>
+            {/*
+              Strip trailing slash before passing to BrowserRouter —
+              React Router rejects basenames that end with `/`
+              (docs: "path without trailing slash"). Vite's BASE_URL
+              preserves the trailing slash from the `base` config
+              (e.g. `/calculators/`), so a bare BASE_URL lands React
+              Router at `basename="/calculators/"` → <Navigate to="/login"/>
+              emits `/calculators//login` and routes fail to match
+              under the Vibe-Appliance path-prefix mount.
+            */}
+            <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, "")}>
               <ShellShortcuts />
               <CommandPalette />
               <Toaster position="bottom-right" richColors />
