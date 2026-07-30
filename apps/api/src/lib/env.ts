@@ -46,9 +46,26 @@ const envSchema = z
 
     VIBE_KMS_KEY: z.string().optional(),
 
+    // Vibe AI Router dual-mode (router-option addendum Q-063/Q-064): `router` sends
+    // all AI traffic through the appliance's Vibe AI Router (task classes + router
+    // policy decide the model; the Anthropic/Local provider settings become inert);
+    // `direct` (default) is the standalone single-install behavior.
+    VIBE_AI_MODE: z.enum(["direct", "router"]).default("direct"),
+    VIBE_AI_ROUTER_URL: z.string().min(1).optional(),
+    VIBE_AI_TOKEN: z.string().min(1).optional(),
+
     GIT_SHA: z.string().optional(),
   })
   .superRefine((env, ctx) => {
+    // Router mode without an address/token cannot work and must NOT silently fall
+    // back to direct (that would route document text around the router's scrubber).
+    if (env.VIBE_AI_MODE === "router" && (!env.VIBE_AI_ROUTER_URL || !env.VIBE_AI_TOKEN)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["VIBE_AI_MODE"],
+        message: "VIBE_AI_MODE=router requires VIBE_AI_ROUTER_URL and VIBE_AI_TOKEN",
+      });
+    }
     if (env.VIBE_DEPLOY_MODE === "domain") {
       if (!env.VIBE_DOMAIN) {
         ctx.addIssue({

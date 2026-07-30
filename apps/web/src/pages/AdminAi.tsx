@@ -27,7 +27,7 @@ import { Input } from "@/components/ui/input";
  *   4. Usage — rolling 30-day cost ledger (existing).
  */
 
-type Provider = "anthropic" | "local";
+type Provider = "anthropic" | "local" | "vibe_router";
 
 interface AiStatus {
   configured: boolean;
@@ -37,6 +37,8 @@ interface AiStatus {
   apiKeyHint: string | null;
   localUrl?: string | null;
   offline: boolean;
+  /** dual-mode: "router" = managed by the Vibe AI Router, provider form inert */
+  aiMode?: "direct" | "router";
 }
 
 interface AiSettings {
@@ -155,9 +157,20 @@ export function AdminAiPage(): JSX.Element {
         </p>
       </header>
 
+      {status.data?.aiMode === "router" && (
+        <Card className="mb-6 border-sky-200 bg-sky-50">
+          <CardContent className="py-4 text-sm text-sky-900">
+            <span className="font-medium">Managed by Vibe AI Router.</span> This appliance routes AI
+            requests through the Vibe AI Router — model choice, provider keys, data protection, and
+            cost tracking are administered in the router console. The provider settings below are
+            not used while router mode is active.
+          </CardContent>
+        </Card>
+      )}
+
       <StatusCard status={status} />
 
-      {settingsQ.data && (
+      {settingsQ.data && status.data?.aiMode !== "router" && (
         <SettingsCard
           initial={settingsQ.data}
           onSaved={() => {

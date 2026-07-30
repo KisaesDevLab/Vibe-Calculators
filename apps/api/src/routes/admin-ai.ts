@@ -108,6 +108,9 @@ function readEnv(): ResolverEnv {
     VIBE_LLM_LOCAL_API_KEY: process.env.VIBE_LLM_LOCAL_API_KEY,
     VIBE_OFFLINE: process.env.VIBE_OFFLINE === "true",
     VIBE_DEPLOY_MODE: process.env.VIBE_DEPLOY_MODE,
+    VIBE_AI_MODE: process.env.VIBE_AI_MODE,
+    VIBE_AI_ROUTER_URL: process.env.VIBE_AI_ROUTER_URL,
+    VIBE_AI_TOKEN: process.env.VIBE_AI_TOKEN,
   };
 }
 
@@ -135,6 +138,9 @@ export function buildAdminAiRouter(deps: AdminAiRouteDeps): Router {
       localUrl:
         resolved?.providerName === "local" ? (process.env.VIBE_LLM_LOCAL_URL ?? null) : null,
       offline: env.VIBE_OFFLINE === true,
+      // dual-mode (Q-063/Q-064): the UI shows a managed-by-router banner and
+      // disables the provider form while router mode is active
+      aiMode: (env.VIBE_AI_MODE ?? "").toLowerCase() === "router" ? "router" : "direct",
     });
   });
 

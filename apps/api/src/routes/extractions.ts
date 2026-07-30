@@ -168,6 +168,9 @@ export function buildExtractionsRouter(deps: ExtractionRouteDeps): Router {
         VIBE_LLM_LOCAL_MODEL: process.env.VIBE_LLM_LOCAL_MODEL,
         VIBE_LLM_LOCAL_API_KEY: process.env.VIBE_LLM_LOCAL_API_KEY,
         VIBE_OFFLINE: process.env.VIBE_OFFLINE === "true",
+        VIBE_AI_MODE: process.env.VIBE_AI_MODE,
+        VIBE_AI_ROUTER_URL: process.env.VIBE_AI_ROUTER_URL,
+        VIBE_AI_TOKEN: process.env.VIBE_AI_TOKEN,
       });
       if (resolved) provider = resolved.provider;
     }

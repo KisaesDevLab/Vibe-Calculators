@@ -4,3 +4,9 @@ export * from "./types.js";
 export * from "./loan-extraction.js";
 export { AnthropicProvider, type AnthropicConfig } from "./anthropic.js";
 export { LocalProvider, type LocalProviderConfig } from "./local.js";
+export {
+  RouterProvider,
+  registerCalcTaskClasses,
+  CALC_TASK_CLASSES,
+  type RouterProviderConfig,
+} from "./router.js";

@@ -14,6 +14,28 @@ const baseEnv: NodeJS.ProcessEnv = {
 };
 
 describe("parseEnv", () => {
+  it("defaults VIBE_AI_MODE to direct", () => {
+    expect(parseEnv(baseEnv).VIBE_AI_MODE).toBe("direct");
+  });
+
+  it("refuses router mode without VIBE_AI_ROUTER_URL + VIBE_AI_TOKEN (no silent fallback)", () => {
+    expect(() => parseEnv({ ...baseEnv, VIBE_AI_MODE: "router" })).toThrow(EnvValidationError);
+    expect(() =>
+      parseEnv({
+        ...baseEnv,
+        VIBE_AI_MODE: "router",
+        VIBE_AI_ROUTER_URL: "http://vibe-ai-router:8220",
+      }),
+    ).toThrow(EnvValidationError);
+    const env = parseEnv({
+      ...baseEnv,
+      VIBE_AI_MODE: "router",
+      VIBE_AI_ROUTER_URL: "http://vibe-ai-router:8220",
+      VIBE_AI_TOKEN: "vibe-calculators-token",
+    });
+    expect(env.VIBE_AI_MODE).toBe("router");
+  });
+
   it("returns parsed env when every required value is present", () => {
     const env = parseEnv(baseEnv);
     expect(env.PORT).toBe(3000);

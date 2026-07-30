@@ -39,7 +39,9 @@ await import("@vibe-calc/tax-engine");
 const { registerTvmCalculators } = await import("./lib/tvm-calculators.js");
 registerTvmCalculators();
 
-const { AnthropicProvider, LocalProvider } = await import("@vibe-calc/llm");
+const { AnthropicProvider, LocalProvider, RouterProvider, registerCalcTaskClasses } = await import(
+  "@vibe-calc/llm"
+);
 import type { LlmProvider as LlmProviderType } from "@vibe-calc/llm";
 
 // Drizzle DB used by every auth-aware route.
@@ -104,6 +106,9 @@ try {
 // Optional LLM provider for Phase 23 loan-extraction.
 //
 // Selection rules:
+//   • VIBE_AI_MODE=router → the Vibe AI Router, overriding everything below
+//     (dual-mode, router-option addendum Q-063/Q-064). Task classes register
+//     at boot; router policy picks the model. No silent fallback to direct.
 //   • VIBE_OFFLINE=true → only the local provider is selectable.
 //   • VIBE_LLM_PROVIDER explicitly set ("anthropic" | "local") → that one wins.
 //   • Otherwise: prefer Anthropic when ANTHROPIC_API_KEY is set,
@@ -114,6 +119,15 @@ try {
 // "no LLM provider configured" message — the rest of the appliance
 // works offline-clean.
 const llmProvider = ((): LlmProviderType | undefined => {
+  if (env.VIBE_AI_MODE === "router") {
+    // loadEnv() guarantees URL+token are present in router mode.
+    // Task-class registration is fired below (non-blocking, retries) — the
+    // router may start after this app on the appliance.
+    return new RouterProvider({
+      baseUrl: env.VIBE_AI_ROUTER_URL as string,
+      token: env.VIBE_AI_TOKEN as string,
+    });
+  }
   const offline = env.VIBE_OFFLINE === true;
   const explicit = (process.env.VIBE_LLM_PROVIDER ?? "").toLowerCase();
   const anthropicKey = process.env.ANTHROPIC_API_KEY?.trim();
@@ -147,6 +161,33 @@ const llmProvider = ((): LlmProviderType | undefined => {
   }
   return undefined;
 })();
+
+// Router mode: declare this app's task classes (idempotent; retries in the
+// background — on the appliance this API regularly starts before the router is
+// healthy). Requests made before registration completes fail closed at the
+// router (unknown task class), which is the correct interim behavior.
+if (env.VIBE_AI_MODE === "router") {
+  let registerAttempt = 0;
+  const tryRegister = async (): Promise<void> => {
+    registerAttempt += 1;
+    try {
+      const res = await registerCalcTaskClasses({
+        baseUrl: env.VIBE_AI_ROUTER_URL as string,
+        token: env.VIBE_AI_TOKEN as string,
+        version: process.env.GIT_SHA ?? "dev",
+      });
+      logger.info({ registered: res.registered }, "vibe-ai-router task classes registered");
+    } catch (err) {
+      const delayMs = Math.min(60_000, 5_000 * registerAttempt);
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err), attempt: registerAttempt },
+        "vibe-ai-router task-class registration failed; will retry",
+      );
+      setTimeout(() => void tryRegister(), delayMs).unref();
+    }
+  };
+  void tryRegister();
+}
 
 /**
  * SSRF guard for the local LLM endpoint. The URL comes from the

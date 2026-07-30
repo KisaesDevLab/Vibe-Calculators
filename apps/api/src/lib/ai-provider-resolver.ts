@@ -5,7 +5,7 @@ import {
   type AiProviderSettingsRow,
   type Database,
 } from "@vibe-calc/db";
-import { AnthropicProvider, LocalProvider, type LlmProvider } from "@vibe-calc/llm";
+import { AnthropicProvider, LocalProvider, RouterProvider, type LlmProvider } from "@vibe-calc/llm";
 import type { KmsClient } from "./kms.js";
 import { logger } from "./logger.js";
 
@@ -33,13 +33,17 @@ export interface ResolverEnv {
   VIBE_LLM_LOCAL_API_KEY?: string | undefined;
   VIBE_OFFLINE?: boolean | undefined;
   VIBE_DEPLOY_MODE?: string | undefined;
+  /** Dual-mode (Q-063/Q-064): "router" overrides everything below it. */
+  VIBE_AI_MODE?: string | undefined;
+  VIBE_AI_ROUTER_URL?: string | undefined;
+  VIBE_AI_TOKEN?: string | undefined;
 }
 
 export interface ResolvedProvider {
   provider: LlmProvider;
   source: "db" | "env";
   /** Provider name surfaced to UI / logs. */
-  providerName: "anthropic" | "local";
+  providerName: "anthropic" | "local" | "vibe_router";
   /** Resolved default model (DB > env > provider default). */
   defaultModel: string | null;
 }
@@ -77,6 +81,25 @@ export async function resolveLlmProvider(
   kms: KmsClient,
   env: ResolverEnv,
 ): Promise<ResolvedProvider | null> {
+  // 0. Router mode overrides everything, including the admin's DB provider config:
+  //    the deployment (appliance env) decided that AI is managed by the Vibe AI
+  //    Router, and per-app provider settings are inert while that holds. Offline
+  //    mode is compatible — the router itself enforces local-only policy per class.
+  if ((env.VIBE_AI_MODE ?? "").toLowerCase() === "router") {
+    if (!env.VIBE_AI_ROUTER_URL || !env.VIBE_AI_TOKEN) {
+      // loadEnv() refuses boot in this state; a hand-rolled ResolverEnv that gets
+      // here anyway must fail, not fall through to a direct provider.
+      logger.error("VIBE_AI_MODE=router without VIBE_AI_ROUTER_URL/VIBE_AI_TOKEN — no provider");
+      return null;
+    }
+    return {
+      provider: new RouterProvider({ baseUrl: env.VIBE_AI_ROUTER_URL, token: env.VIBE_AI_TOKEN }),
+      source: "env",
+      providerName: "vibe_router",
+      defaultModel: null, // router policy decides per task class
+    };
+  }
+
   const settings = await getAiProviderSettings(db);
   const offline = env.VIBE_OFFLINE === true;
 
