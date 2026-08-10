@@ -1,4 +1,9 @@
-import { VibeAiClient, VibeAiError, type ChatMessage } from "@kisaes/vibe-ai-client";
+import {
+  VibeAiClient,
+  VibeAiError,
+  type ChatMessage,
+  type CompletionResult,
+} from "@kisaes/vibe-ai-client";
 import { LlmError, type LlmProvider, type LlmTextRequest, type LlmTextResponse } from "./types.js";
 
 /**
@@ -55,21 +60,30 @@ export class RouterProvider implements LlmProvider {
     try {
       // request.model is deliberately NOT forwarded: in router mode, model choice is
       // router policy's job — an app-pinned model would bypass the admin's config.
-      const result = await this.client.complete(this.taskClass, messages, {
+      const options = {
         ...(request.maxTokens !== undefined ? { maxTokens: request.maxTokens } : {}),
         ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
-        ...(request.responseSchema
-          ? {
-              responseFormat: {
-                type: "json_schema" as const,
-                name: "extraction",
-                schema: request.responseSchema,
-              },
-            }
-          : {}),
-      });
+      };
+      let result: CompletionResult;
+      let text: string;
+      if (request.responseSchema) {
+        // completeJson covers how local models answer forced-JSON requests — tool-call
+        // replies and markdown-fenced JSON. Re-serialize so callers keep the one
+        // JSON.parse() code path shared with the other providers.
+        const jsonResult = await this.client.completeJson<unknown>(
+          this.taskClass,
+          messages,
+          { name: "extraction", schema: request.responseSchema },
+          options,
+        );
+        result = jsonResult;
+        text = JSON.stringify(jsonResult.data);
+      } else {
+        result = await this.client.complete(this.taskClass, messages, options);
+        text = result.content;
+      }
       return {
-        text: result.content,
+        text,
         responseId: result.requestId,
         inputTokens: result.usage.promptTokens,
         outputTokens: result.usage.completionTokens,

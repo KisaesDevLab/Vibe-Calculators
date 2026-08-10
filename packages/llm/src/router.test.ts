@@ -59,7 +59,10 @@ describe("RouterProvider", () => {
     expect(headers.authorization).toBe("Bearer vibe-calc-token");
     const body = JSON.parse(String(captured!.init.body)) as Record<string, unknown>;
     expect(body.model).toBeUndefined();
-    expect(body.response_format).toMatchObject({ type: "json_schema" });
+    expect(body.response_format).toMatchObject({
+      type: "json_schema",
+      json_schema: { name: "extraction" },
+    });
     expect((body.messages as unknown[]).length).toBe(2);
 
     expect(res.text).toBe('{"principal":250000}');
@@ -68,6 +71,93 @@ describe("RouterProvider", () => {
     expect(res.responseId).toBe("req-test-1");
     expect(res.inputTokens).toBe(900);
     expect(res.outputTokens).toBe(40);
+  });
+
+  it("unwraps markdown-fenced JSON when a responseSchema is set", async () => {
+    const provider = new RouterProvider({
+      baseUrl: "http://vibe-ai-router:8220",
+      token: "t",
+      fetch: fetchAnswering(200, {
+        ...COMPLETION,
+        choices: [
+          { message: { content: '```json\n{"principal":250000}\n```' }, finish_reason: "stop" },
+        ],
+      }),
+    });
+    const res = await provider.generate({
+      prompt: "extract terms",
+      responseSchema: { type: "object" },
+    });
+    expect(res.text).toBe('{"principal":250000}');
+  });
+
+  it("reads a tool-call-shaped answer when content is empty", async () => {
+    const provider = new RouterProvider({
+      baseUrl: "http://vibe-ai-router:8220",
+      token: "t",
+      fetch: fetchAnswering(200, {
+        ...COMPLETION,
+        choices: [
+          {
+            message: {
+              content: "",
+              tool_calls: [
+                {
+                  id: "tc1",
+                  function: { name: "extraction", arguments: '{"principal":250000}' },
+                },
+              ],
+            },
+            finish_reason: "tool_calls",
+          },
+        ],
+      }),
+    });
+    const res = await provider.generate({
+      prompt: "extract terms",
+      responseSchema: { type: "object" },
+    });
+    expect(res.text).toBe('{"principal":250000}');
+  });
+
+  it("maps an unparseable forced-JSON answer to LlmError 502", async () => {
+    const provider = new RouterProvider({
+      baseUrl: "http://vibe-ai-router:8220",
+      token: "t",
+      fetch: fetchAnswering(200, {
+        ...COMPLETION,
+        choices: [{ message: { content: "I cannot extract that." }, finish_reason: "stop" }],
+      }),
+    });
+    await expect(
+      provider.generate({ prompt: "extract terms", responseSchema: { type: "object" } }),
+    ).rejects.toSatisfy(
+      (e: unknown) =>
+        e instanceof LlmError &&
+        e.provider === "vibe_router" &&
+        e.statusCode === 502 &&
+        /not valid JSON/.test(e.message),
+    );
+  });
+
+  it("passes prose through verbatim when no responseSchema is set", async () => {
+    let captured: { url: string; init: RequestInit } | undefined;
+    const provider = new RouterProvider({
+      baseUrl: "http://vibe-ai-router:8220",
+      token: "t",
+      fetch: fetchAnswering(
+        200,
+        {
+          ...COMPLETION,
+          choices: [{ message: { content: "plain prose answer" }, finish_reason: "stop" }],
+        },
+        (url, init) => (captured = { url, init }),
+      ),
+    });
+    const res = await provider.generate({ prompt: "summarize" });
+    expect(res.text).toBe("plain prose answer");
+    const body = JSON.parse(String(captured!.init.body)) as Record<string, unknown>;
+    expect(body.response_format).toBeUndefined();
   });
 
   it("maps router errors to LlmError with the router status — no fallback", async () => {
