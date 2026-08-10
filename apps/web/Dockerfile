@@ -35,20 +35,29 @@ WORKDIR /repo
 
 # ----------------------------------------------------------------------
 FROM base AS fetch
+# Scripts must stay ENABLED through fetch/install: the git-hosted
+# @kisaes/vibe-ai-client (packages/llm) ships src/ only and relies on its
+# "prepare" (tsc) to produce dist/. With --ignore-scripts, pnpm packs it
+# into the store without dist (honoring files:["dist"]) and every later
+# install reuses the broken entry. simple-git-hooks is skipped via env
+# instead (no .git here), and engine-strict is relaxed because the SDK repo
+# root declares engines.node >=24 for its own dev environment while the SDK
+# itself supports >=20.
+ENV SKIP_INSTALL_SIMPLE_GIT_HOOKS=1 \
+    npm_config_engine_strict=false
 COPY pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
-# --ignore-scripts: fetch shouldn't run lifecycle hooks; in particular
-# simple-git-hooks' postinstall would fail here because the workspace
-# package.json files haven't been COPYd yet.
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm fetch --prod=false --ignore-scripts
+    pnpm fetch --prod=false
 
 # ----------------------------------------------------------------------
 FROM fetch AS build
 COPY package.json tsconfig.base.json tsconfig.json ./
 COPY apps/web ./apps/web
 COPY packages ./packages
+# --prefer-offline (not --offline): preparing the git-hosted SDK needs
+# network on a cold store; see the fetch stage for why scripts stay enabled.
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm install --frozen-lockfile --offline --ignore-scripts
+    pnpm install --frozen-lockfile --prefer-offline
 RUN pnpm --filter @vibe-calc/web... build
 
 # ----------------------------------------------------------------------
