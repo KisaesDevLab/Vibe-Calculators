@@ -30,6 +30,11 @@ export default defineConfig(({ command }) => ({
         target: process.env.VITE_API_PROXY_TARGET ?? "http://localhost:3000",
         changeOrigin: true,
       },
+      // Single sign-on routes live in the API tier, outside /api.
+      "/auth": {
+        target: process.env.VITE_API_PROXY_TARGET ?? "http://localhost:3000",
+        changeOrigin: true,
+      },
     },
   },
   preview: {

@@ -50,6 +50,16 @@ export interface CreateSessionInput {
   userId: string;
   ip?: string | undefined;
   userAgent?: string | undefined;
+  /**
+   * Set by the single sign-on callback only. `idToken` must already be
+   * KMS-sealed — this module never sees the plaintext.
+   */
+  oidc?: {
+    issuer: string;
+    subject: string;
+    sid?: string | undefined;
+    idToken?: string | undefined;
+  };
   /** Override clock for tests. */
   now?: Date;
 }
@@ -83,6 +93,10 @@ export async function createSession(
       absoluteExpiresAt: new Date(now.getTime() + ABSOLUTE_TTL_MS),
       ip: input.ip ?? null,
       userAgent: input.userAgent ?? null,
+      oidcIssuer: input.oidc?.issuer ?? null,
+      oidcSubject: input.oidc?.subject ?? null,
+      oidcSid: input.oidc?.sid ?? null,
+      oidcIdToken: input.oidc?.idToken ?? null,
     })
     .returning();
   if (!row) throw new Error("Session insert returned no row");

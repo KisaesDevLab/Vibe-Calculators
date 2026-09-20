@@ -45,9 +45,17 @@ FROM base AS fetch
 # itself supports >=20.
 ENV SKIP_INSTALL_SIMPLE_GIT_HOOKS=1 \
     npm_config_engine_strict=false
+# @kisaesdevlab/vibe-auth (single sign-on; the SPA uses its React entry)
+# comes from GitHub Packages, which wants a token even for reads. It is a
+# BuildKit secret, written to a throwaway user npmrc that never lands in a
+# layer (a failed step commits no layer at all):
+#   docker build --secret id=NODE_AUTH_TOKEN,env=NODE_AUTH_TOKEN …
 COPY pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm fetch --prod=false
+    --mount=type=secret,id=NODE_AUTH_TOKEN,required=true \
+    printf '//npm.pkg.github.com/:_authToken=%s\n' "$(cat /run/secrets/NODE_AUTH_TOKEN)" > /root/.npmrc \
+ && pnpm fetch --prod=false \
+ && rm -f /root/.npmrc
 
 # ----------------------------------------------------------------------
 FROM fetch AS build
@@ -57,7 +65,10 @@ COPY packages ./packages
 # --prefer-offline (not --offline): preparing the git-hosted SDK needs
 # network on a cold store; see the fetch stage for why scripts stay enabled.
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm install --frozen-lockfile --prefer-offline
+    --mount=type=secret,id=NODE_AUTH_TOKEN,required=true \
+    printf '//npm.pkg.github.com/:_authToken=%s\n' "$(cat /run/secrets/NODE_AUTH_TOKEN)" > /root/.npmrc \
+ && pnpm install --frozen-lockfile --prefer-offline \
+ && rm -f /root/.npmrc
 RUN pnpm --filter @vibe-calc/web... build
 
 # ----------------------------------------------------------------------

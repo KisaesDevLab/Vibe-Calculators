@@ -37,6 +37,9 @@ const AdminEmailPage = lazy(() =>
 const AdminFirmSettingsPage = lazy(() =>
   import("@/pages/AdminFirmSettings").then((m) => ({ default: m.AdminFirmSettingsPage })),
 );
+const AdminAuthenticationPage = lazy(() =>
+  import("@/pages/AdminAuthentication").then((m) => ({ default: m.AdminAuthenticationPage })),
+);
 const AdminAiPromptsPage = lazy(() =>
   import("@/pages/AdminAiPrompts").then((m) => ({ default: m.AdminAiPromptsPage })),
 );
@@ -123,6 +126,7 @@ export function App(): JSX.Element {
               <Routes>
                 <Route path="/" element={<Navigate to="/calculators" replace />} />
                 <Route path="/login" element={<LoginPage />} />
+                <Route path="/login/local" element={<LoginPage breakglass />} />
                 <Route path="/login/magic" element={<MagicLinkPage />} />
                 <Route
                   path="/onboarding/change-password"
@@ -366,6 +370,18 @@ export function App(): JSX.Element {
                       <ShelledRoute>
                         <Suspense fallback={<RouteSpinner />}>
                           <AdminEmailPage />
+                        </Suspense>
+                      </ShelledRoute>
+                    </RequirePerm>
+                  }
+                />
+                <Route
+                  path="/admin/authentication"
+                  element={
+                    <RequirePerm perm="settings:write">
+                      <ShelledRoute>
+                        <Suspense fallback={<RouteSpinner />}>
+                          <AdminAuthenticationPage />
                         </Suspense>
                       </ShelledRoute>
                     </RequirePerm>

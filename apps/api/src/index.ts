@@ -29,6 +29,7 @@ const { startSchedulerWorker, stopSchedulerWorker } = await import("./lib/schedu
 const { seedDefaultAdminIfEmpty, printDefaultAdminBanner } = await import(
   "./lib/seed-default-admin.js"
 );
+const { createCalcVibeAuth } = await import("./lib/vibeAuth.js");
 
 // Side-effect imports: importing @vibe-calc/tax-engine triggers each
 // calculator module's registerCalculator() call, populating the global
@@ -80,6 +81,34 @@ rateLimitRedis.on("error", (err) => {
   logger.error({ err: err.message }, "rate-limit redis error");
 });
 const rateLimiter = createRateLimiter(redisStore(rateLimitRedis));
+
+// Single sign-on (@kisaesdevlab/vibe-auth). Additive: the mode defaults
+// to `local`, where the engine only answers GET /auth/status. start()
+// never throws for IdP trouble — its one refusal is `oidc_only` without
+// an active break-glass user, and that must abort the boot.
+const vibeAuth = createCalcVibeAuth({
+  db,
+  pool,
+  kms,
+  deployMode: env.VIBE_DEPLOY_MODE,
+  logger: {
+    info: (msg, meta) => logger.info(meta ?? {}, msg),
+    warn: (msg, meta) => logger.warn(meta ?? {}, msg),
+    error: (msg, meta) => logger.error(meta ?? {}, msg),
+  },
+});
+await vibeAuth.auth.start();
+{
+  const s = vibeAuth.auth.status();
+  logger.info(
+    {
+      mode: s.mode,
+      sso: s.oidc.enabled ? s.oidc.issuer : "off",
+      prefix: vibeAuth.spaPrefix || "/",
+    },
+    "vibe-auth ready",
+  );
+}
 
 // Resolved per-send so admin edits in /admin/email take effect without
 // a restart. DB-backed singleton wins; .env is the fallback.
@@ -282,7 +311,7 @@ const emitMagicLinkEmail = async (input: {
 // Number of migration tags shipped with this release; bumped each
 // time a new file lands in packages/db/drizzle/. The deep-health
 // schema-version probe asserts the applied count matches.
-const EXPECTED_MIGRATIONS = 22; // 0000..0021
+const EXPECTED_MIGRATIONS = 23; // 0000..0022
 
 const app = createApp({
   health: {
@@ -303,8 +332,10 @@ const app = createApp({
       env: { VIBE_DEPLOY_MODE: env.VIBE_DEPLOY_MODE },
       apiKeyRateStore: redisStore(rateLimitRedis),
     },
+    sso: vibeAuth.middleware,
     routes: {
       db,
+      vibeAuth: vibeAuth.auth,
       env: { VIBE_DEPLOY_MODE: env.VIBE_DEPLOY_MODE },
       rateLimiter,
       totpSealer,
@@ -354,6 +385,7 @@ const server = app.listen(env.PORT, () => {
 async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, "Shutting down");
   server.close(() => undefined);
+  vibeAuth.auth.stop();
   await Promise.allSettled([
     stopExportWorker(),
     stopWebhookWorker(),

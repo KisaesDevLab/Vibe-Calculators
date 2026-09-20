@@ -12,6 +12,7 @@ concurrency:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   build-and-test:
@@ -30,9 +31,15 @@ jobs:
         with:
           node-version: "20.15.0"
           cache: "pnpm"
+          # @kisaesdevlab/vibe-auth lives on GitHub Packages (scope mapped in
+          # .npmrc); setup-node writes the token line for NODE_AUTH_TOKEN.
+          registry-url: https://npm.pkg.github.com
+          scope: "@kisaesdevlab"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # Build first so composite-project references resolve. Several
       # workspace tsconfigs reference others' `dist/` (e.g. pdf →
@@ -59,6 +66,7 @@ jobs:
     needs: build-and-test
     permissions:
       contents: read
+      packages: read
 
     steps:
       - name: Checkout
@@ -77,6 +85,8 @@ jobs:
           build-args: |
             GIT_SHA=${{ github.sha }}
             VERSION=ci-${{ github.run_number }}
+          secrets: |
+            NODE_AUTH_TOKEN=${{ secrets.GITHUB_TOKEN }}
           cache-from: type=gha,scope=api
           cache-to: type=gha,scope=api,mode=max
 
@@ -86,6 +96,7 @@ jobs:
     needs: build-and-test
     permissions:
       contents: read
+      packages: read
 
     steps:
       - name: Checkout
@@ -104,5 +115,7 @@ jobs:
           build-args: |
             GIT_SHA=${{ github.sha }}
             VERSION=ci-${{ github.run_number }}
+          secrets: |
+            NODE_AUTH_TOKEN=${{ secrets.GITHUB_TOKEN }}
           cache-from: type=gha,scope=web
           cache-to: type=gha,scope=web,mode=max

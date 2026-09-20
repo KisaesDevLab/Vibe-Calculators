@@ -52,6 +52,9 @@ function loadOrderedMigrations(): { name: string; sql: string }[] {
 }
 
 const TABLES_TO_TRUNCATE = [
+  "auth_identities",
+  "auth_settings",
+  "auth_revocations",
   "webhook_subscriptions",
   "api_keys",
   "extraction_jobs",

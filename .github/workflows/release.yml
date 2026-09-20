@@ -84,5 +84,7 @@ jobs:
           build-args: |
             GIT_SHA=${{ github.sha }}
             VERSION=${{ github.ref_name }}
+          secrets: |
+            NODE_AUTH_TOKEN=${{ secrets.GITHUB_TOKEN }}
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,scope=${{ matrix.image }},mode=max

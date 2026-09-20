@@ -1,5 +1,5 @@
 {
-  "_doc": "Vibe-Appliance per-app manifest. Schema: https://github.com/KisaesDevLab/Vibe-Appliance/blob/main/console/manifest.schema.json. Worked example: console/manifests/vibe-tb.json. Allocations cross-checked against Vibe-Appliance/docs/addenda/emergency-access.md §3 Port assignments at the time of authoring (Phase 01).",
+  "_doc": "Vibe-Appliance per-app manifest. Schema: https://github.com/KisaesDevLab/Vibe-Appliance/blob/main/console/manifest.schema.json. Worked example: console/manifests/vibe-tb.json. Allocations cross-checked against Vibe-Appliance/docs/addenda/emergency-access.md §3 Port assignments at the time of authoring (Phase 01). SSO: Single sign-on via @kisaesdevlab/vibe-auth (docs/sso.md). /api/v1/* is public at the edge because API keys (Bearer vibe_…) authenticate it in-app; the edge gate is off. The runtime image is distroless (no shell, no npx): the break-glass CLI runs by module path from WORKDIR /app, where it finds package.json → vibeAuth.adapter.",
 
   "schemaVersion": 1,
   "slug": "vibe-calculators",
@@ -19,10 +19,40 @@
 
   "routing": {
     "default_upstream": "vibe-calculators-client:80",
-    "matchers": [{ "name": "api", "path": "/api/*", "upstream": "vibe-calculators-server:3000" }]
+    "matchers": [
+      { "name": "api", "path": "/api/*", "upstream": "vibe-calculators-server:3000" },
+      { "name": "auth", "path": "/auth/*", "upstream": "vibe-calculators-server:3000" }
+    ]
   },
 
   "depends": ["postgres", "redis"],
+  "requires": ["identity"],
+
+  "sso": {
+    "capable": true,
+    "redirectPaths": ["/auth/oidc/callback"],
+    "logoutPaths": ["/auth/oidc/backchannel"],
+    "publicPaths": [
+      "/api/health",
+      "/api/health/deep",
+      "/api/v1/openapi.json",
+      "/api/v1/auth/login",
+      "/api/v1/auth/logout",
+      "/api/v1/auth/magic-link",
+      "/api/v1/auth/magic-link/consume",
+      "/api/v1/*"
+    ],
+    "edgeGate": false,
+    "internalUrl": "http://vibe-calculators-server:3000",
+    "breakglassService": "vibe-calculators-server",
+    "breakglassCommand": [
+      "/nodejs/bin/node",
+      "/app/node_modules/@kisaesdevlab/vibe-auth/dist/cli.js",
+      "breakglass",
+      "ensure",
+      "--json"
+    ]
+  },
 
   "env": {
     "required": [
@@ -73,6 +103,11 @@
       { "name": "EMAILIT_API_KEY", "from": "appliance:EMAILIT_API_KEY", "secret": true },
       { "name": "EMAILIT_FROM", "from": "appliance:EMAILIT_FROM" },
       { "name": "EMAILIT_ENDPOINT", "from": "appliance:EMAILIT_ENDPOINT" },
+      {
+        "name": "VIBE_OIDC_REQUIRE_MFA_AMR",
+        "from": "static:true",
+        "doc": "Single sign-on: refuse an SSO sign-in whose amr claim shows no second factor. SSO sessions skip this app's own TOTP step, so the identity provider's MFA stands in for it. Changeable under Settings → Authentication (with a logged acknowledgement)."
+      },
       {
         "name": "VIBE_AFR_FEED_URL",
         "from": "appliance:VIBE_AFR_FEED_URL",

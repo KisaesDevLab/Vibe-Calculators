@@ -22,6 +22,8 @@ import type { SecretSealer } from "../lib/totp.js";
 import { permissionsFor, type Permission, type Role } from "@vibe-calc/shared-types";
 import { clientIp, problem } from "../middleware/auth.js";
 import type { Env } from "../lib/env.js";
+import type { LocalLoginPolicy } from "../lib/vibeAuth.js";
+import { BREAKGLASS_EMAIL, DEFAULT_BREAKGLASS_USERNAME } from "../lib/vibeAuthUsers.js";
 
 export interface AuthRouteDeps {
   db: Database;
@@ -35,16 +37,34 @@ export interface AuthRouteDeps {
     expiresAt: Date;
   }) => Promise<void> | void;
   totpSealer: SecretSealer;
+  /**
+   * Single sign-on engine (lib/vibeAuth.ts). When absent — route tests,
+   * installs predating SSO wiring — local login behaves exactly as before.
+   */
+  vibeAuth?: LocalLoginPolicy | undefined;
 }
 
-const loginBodySchema = z.object({
-  email: z.string().email().toLowerCase(),
-  password: z.string().min(1),
-  totpCode: z
-    .string()
-    .regex(/^\d{6}$/)
-    .optional(),
-});
+/**
+ * The login identifier is an email, or the literal break-glass username:
+ * the Appliance prints only that username, never the address the row is
+ * stored under.
+ */
+function loginBodySchemaFor(breakglassUsername: string) {
+  return z.object({
+    email: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .pipe(z.union([z.string().email(), z.literal(breakglassUsername)])),
+    password: z.string().min(1),
+    totpCode: z
+      .string()
+      .regex(/^\d{6}$/)
+      .optional(),
+  });
+}
+
+const SSO_ONLY_DETAIL = "Local sign-in is disabled; use single sign-on.";
 
 const magicLinkRequestSchema = z.object({
   email: z.string().email().toLowerCase(),
@@ -63,14 +83,29 @@ const magicLinkConsumeSchema = z.object({
 
 export function buildAuthRouter(deps: AuthRouteDeps): Router {
   const router = Router();
+  const policy = deps.vibeAuth;
+  const breakglassUsername = (
+    policy?.config.breakglassUsername ?? DEFAULT_BREAKGLASS_USERNAME
+  ).toLowerCase();
+  const loginBodySchema = loginBodySchemaFor(breakglassUsername);
 
   router.post("/login", async (req: Request, res: Response) => {
     const parsed = loginBodySchema.safeParse(req.body);
     if (!parsed.success) {
       return problem(res, 400, "Bad request", "Invalid login body");
     }
-    const { email, password, totpCode } = parsed.data;
+    const { password, totpCode } = parsed.data;
+    // Break-glass signs in by username or by its stored address; the
+    // engine's rules compare against the username either way.
+    const isBreakglass =
+      parsed.data.email === breakglassUsername || parsed.data.email === BREAKGLASS_EMAIL;
+    const email = isBreakglass ? BREAKGLASS_EMAIL : parsed.data.email;
     const ip = clientIp(req);
+
+    // oidc_only: only the break-glass account may sign in locally.
+    if (policy && !policy.localLoginAllowed(isBreakglass ? breakglassUsername : email).allowed) {
+      return problem(res, 403, "Forbidden", SSO_ONLY_DETAIL, { code: "local_login_disabled" });
+    }
 
     // Rate limit lookup BEFORE password check so failed-against-locked
     // attempts return immediately without spending Argon2 cycles.
@@ -110,7 +145,9 @@ export function buildAuthRouter(deps: AuthRouteDeps): Router {
       return rejectLogin(res, failure);
     }
 
-    if (user.totpEnabled) {
+    // Break-glass is password-only by policy (docs/sso.md): it has to work
+    // during an IdP outage with nothing pre-enrolled.
+    if (user.totpEnabled && !isBreakglass) {
       if (!totpCode) {
         return problem(res, 401, "TOTP required", "totp_code field is required");
       }
@@ -164,6 +201,11 @@ export function buildAuthRouter(deps: AuthRouteDeps): Router {
       // the token is sensitive and lives only in the response cookie.
       payload: { sessionId: created.session.id },
     });
+    await policy?.afterLocalLogin({
+      userId: user.id,
+      ...(isBreakglass ? { username: breakglassUsername } : { email }),
+      ip,
+    });
 
     setSessionCookie(res, created.token, { deployMode: deps.env.VIBE_DEPLOY_MODE });
     res.status(200).json({
@@ -195,6 +237,11 @@ export function buildAuthRouter(deps: AuthRouteDeps): Router {
     const parsed = magicLinkRequestSchema.safeParse(req.body);
     if (!parsed.success) {
       return problem(res, 400, "Bad request", "Invalid magic-link body");
+    }
+    // oidc_only: a mailbox must not be a way around the identity provider.
+    // Mode-wide, so the answer discloses nothing about any one address.
+    if (policy?.config.mode === "oidc_only") {
+      return problem(res, 403, "Forbidden", SSO_ONLY_DETAIL, { code: "local_login_disabled" });
     }
     const ip = clientIp(req);
     // Rate-limit per (ip, email) to prevent mailbox-spam abuse. Same
@@ -246,6 +293,11 @@ export function buildAuthRouter(deps: AuthRouteDeps): Router {
     const parsed = magicLinkConsumeSchema.safeParse(req.body);
     if (!parsed.success) {
       return problem(res, 400, "Bad request", "Invalid token body");
+    }
+    // Checked before the token is burned: a link issued in `both` mode is
+    // still good if the firm switches back.
+    if (policy?.config.mode === "oidc_only") {
+      return problem(res, 403, "Forbidden", SSO_ONLY_DETAIL, { code: "local_login_disabled" });
     }
     const ip = clientIp(req);
     const result = await consumeMagicLinkRow(deps.db, { token: parsed.data.token, ip });
@@ -344,6 +396,7 @@ export function buildAuthRouter(deps: AuthRouteDeps): Router {
       userAgent: req.headers["user-agent"] ?? undefined,
       payload: { sessionId: created.session.id },
     });
+    await policy?.afterLocalLogin({ userId: result.user.id, email: result.user.email, ip });
     setSessionCookie(res, created.token, { deployMode: deps.env.VIBE_DEPLOY_MODE });
     res.status(200).json({
       user: publicUser(result.user, permissionsFor(result.user.role)),
@@ -359,6 +412,8 @@ export function buildAuthRouter(deps: AuthRouteDeps): Router {
         ? {
             expiresAt: req.session.expiresAt.toISOString(),
             absoluteExpiresAt: req.session.absoluteExpiresAt.toISOString(),
+            // Born from single sign-on: the SPA signs out through the IdP.
+            sso: req.session.oidcIssuer !== null,
           }
         : null,
     });

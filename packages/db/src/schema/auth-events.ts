@@ -43,6 +43,20 @@ export const authEventKindEnum = pgEnum("auth_event_kind", [
   "user.role_changed",
   "user.totp_required",
   "bootstrap.first_admin",
+  // Single sign-on (migration 0022): the @kisaesdevlab/vibe-auth audit
+  // vocabulary, verbatim, so SSO events share this chain.
+  "vibe.auth.login.success",
+  "vibe.auth.login.failure",
+  "vibe.auth.user.provisioned",
+  "vibe.auth.user.linked",
+  "vibe.auth.role.changed",
+  "vibe.auth.logout",
+  "vibe.auth.mode.changed",
+  "vibe.auth.breakglass.used",
+  "vibe.auth.breakglass.rotated",
+  "vibe.auth.idp.unreachable",
+  "vibe.auth.settings.changed",
+  "vibe.auth.mfa.enforcement.disabled",
 ]);
 
 export const authEvents = pgTable(

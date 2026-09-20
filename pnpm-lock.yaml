@@ -51,6 +51,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@kisaesdevlab/vibe-auth':
+        specifier: 1.0.5
+        version: 1.0.5(drizzle-orm@0.36.4(@electric-sql/pglite@0.2.13)(@types/pg@8.11.10)(@types/react@18.3.12)(pg@8.13.1)(react@18.3.1))(express@4.21.1)(react@18.3.1)
       '@node-rs/argon2':
         specifier: 2.0.2
         version: 2.0.2
@@ -154,6 +157,9 @@ importers:
       '@types/supertest':
         specifier: 6.0.2
         version: 6.0.2
+      jose:
+        specifier: 5.10.0
+        version: 5.10.0
       pino-pretty:
         specifier: 13.0.0
         version: 13.0.0
@@ -172,6 +178,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@kisaesdevlab/vibe-auth':
+        specifier: 1.0.5
+        version: 1.0.5(drizzle-orm@0.36.4(@electric-sql/pglite@0.2.13)(@types/pg@8.11.10)(@types/react@18.3.12)(pg@8.13.1)(react@18.3.1))(express@4.21.1)(react@18.3.1)
       '@radix-ui/react-dialog':
         specifier: 1.1.4
         version: 1.1.4(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -562,11 +571,11 @@ packages:
 
   '@esbuild-kit/core-utils@3.3.2':
     resolution: {integrity: sha512-sPRAnw9CdSsRmEtnsl2WXWdyquogVpB3yZ3dgwJfe8zrOzTsV7cJvmwrKVa+0ma5BoiGJ+BoqkMvawbayKUsqQ==}
-    deprecated: 'Merged into tsx: https://tsx.is'
+    deprecated: 'Merged into tsx: https://tsx.hirok.io'
 
   '@esbuild-kit/esm-loader@2.6.5':
     resolution: {integrity: sha512-FxEMIkJKnodyA1OaCUoEvbYRkoZlLZ4d/eXFu9Fh8CbBBgP5EmZxrfTRyN0qpXZ4vOvqnE5YdRdcrmUUXuU+dA==}
-    deprecated: 'Merged into tsx: https://tsx.is'
+    deprecated: 'Merged into tsx: https://tsx.hirok.io'
 
   '@esbuild/aix-ppc64@0.19.12':
     resolution: {integrity: sha512-bmoCYyWdEL3wDQIVbcyzRyeKLgk2WtWLTWz1ZIAZF/EGbNOwSA6ew3PftJ1PqMiOOGu0OyFMzG53L0zqIpPeNA==}
@@ -1230,6 +1239,15 @@ packages:
     resolution: {path: packages/sdk, tarball: https://codeload.github.com/KisaesDevLab/Vibe-AI-Router/tar.gz/68d3e4be867eea5f12856ed2a1132911e5de1ac9}
     version: 0.2.0
     engines: {node: '>=20'}
+
+  '@kisaesdevlab/vibe-auth@1.0.5':
+    resolution: {integrity: sha512-4FX0vcC/bjQXBp+u1+hiKUUvCxOhZVRLUMboaLGF/Q51yu9b6DTGXnjOSdzJHdHGVrLA5PT418ibIWcq4X/CCg==, tarball: https://npm.pkg.github.com/download/@kisaesdevlab/vibe-auth/1.0.5/acaf2320b35b684ed68de2cb8a3ea56e02a96a19}
+    engines: {node: '>=20'}
+    hasBin: true
+    peerDependencies:
+      drizzle-orm: 0.36.4
+      express: '>=4.18'
+      react: '>=18'
 
   '@msgpackr-extract/msgpackr-extract-darwin-arm64@3.0.3':
     resolution: {integrity: sha512-QZHtlVgbAdy2zAqNA9Gu1UpIuI8Xvsd1v8ic6B2pZmeFnFcMWiPLfWXh7TVw4eGEZ/C9TH281KwhVoeQUKbyjw==}
@@ -3296,6 +3314,7 @@ packages:
   eslint@9.39.4:
     resolution: {integrity: sha512-XoMjdBOwe/esVgEvLmNsD3IRHkm7fbKIUGvrleloJXUZgDHig2IPWNniv+GwjyJXzuNqVjlr5+4yVUZjycJwfQ==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+    deprecated: This version is no longer supported. Please see https://eslint.org/version-support for other options.
     hasBin: true
     peerDependencies:
       jiti: '*'
@@ -3862,6 +3881,9 @@ packages:
   jiti@1.21.7:
     resolution: {integrity: sha512-/imKNG4EbWNrVjoNC/1H5/9GFy+tqjGBHCaSsN+P2RnPqjsLmv6UD3Ej+Kj8nBWaRAwyk7kK5ZUc+OEatnTR3A==}
     hasBin: true
+
+  jose@5.10.0:
+    resolution: {integrity: sha512-s+3Al/p9g32Iq+oqXxkW//7jk2Vig6FF1CFqzVXoTUXt2qz89YWbL+OwS17NFYEvxC35n0FKeGO2LGYSxeM2Gg==}
 
   joycon@3.1.1:
     resolution: {integrity: sha512-34wB/Y7MW7bzjKRjUKTa46I2Z7eV62Rkhva+KkopW7Qvv/OSWBqvkSY7vusOPrNuZcUG3tApvdVgNB8POj3SPw==}
@@ -4726,6 +4748,7 @@ packages:
   recharts@2.15.0:
     resolution: {integrity: sha512-cIvMxDfpAmqAmVgc4yb7pgm/O1tmmkl/CjrvXuW+62/+7jj/iF9Ykm+hb/UJt42TREHMyd3gb+pkgoa2MxgDIw==}
     engines: {node: '>=14'}
+    deprecated: 1.x and 2.x branches are no longer active. Bump to Recharts v3 to receive latest features and bugfixes. See https://github.com/recharts/recharts/wiki/3.0-migration-guide
     peerDependencies:
       react: ^16.0.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
       react-dom: ^16.0.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
@@ -6161,6 +6184,14 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.5.5
 
   '@kisaes/vibe-ai-client@https://codeload.github.com/KisaesDevLab/Vibe-AI-Router/tar.gz/68d3e4be867eea5f12856ed2a1132911e5de1ac9#path:packages/sdk': {}
+
+  '@kisaesdevlab/vibe-auth@1.0.5(drizzle-orm@0.36.4(@electric-sql/pglite@0.2.13)(@types/pg@8.11.10)(@types/react@18.3.12)(pg@8.13.1)(react@18.3.1))(express@4.21.1)(react@18.3.1)':
+    dependencies:
+      drizzle-orm: 0.36.4(@electric-sql/pglite@0.2.13)(@types/pg@8.11.10)(@types/react@18.3.12)(pg@8.13.1)(react@18.3.1)
+      express: 4.21.1
+      jose: 5.10.0
+      react: 18.3.1
+      zod: 3.23.8
 
   '@msgpackr-extract/msgpackr-extract-darwin-arm64@3.0.3':
     optional: true
@@ -9065,6 +9096,8 @@ snapshots:
       restructure: 3.0.2
 
   jiti@1.21.7: {}
+
+  jose@5.10.0: {}
 
   joycon@3.1.1: {}
 

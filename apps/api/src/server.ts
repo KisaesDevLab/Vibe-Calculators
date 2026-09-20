@@ -3,7 +3,13 @@
 // in; we'd remove this on the upgrade. MUST be imported before express.
 import "express-async-errors";
 
-import express, { type Express, type NextFunction, type Request, type Response } from "express";
+import express, {
+  type Express,
+  type NextFunction,
+  type Request,
+  type RequestHandler,
+  type Response,
+} from "express";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import { buildHealthRouter, type HealthDependencies } from "./routes/health.js";
@@ -47,6 +53,11 @@ export interface ServerOptions {
   /** When set, the server wires every auth-aware route. */
   auth?: {
     middleware: AuthMiddlewareOptions;
+    /**
+     * Single sign-on routes (`/auth/*`, lib/vibeAuth.ts). Optional so
+     * route tests without an engine stay unaffected.
+     */
+    sso?: RequestHandler | undefined;
     routes: AuthRouteDeps &
       MeRouteDeps &
       AdminUserRouteDeps &
@@ -98,6 +109,9 @@ export function createApp(options: ServerOptions = {}): Express {
 
   if (options.auth) {
     app.use(loadSession(options.auth.middleware));
+    // After loadSession (attach-only; API keys resolve first), before
+    // every router. Passes anything outside /auth/* straight through.
+    if (options.auth.sso) app.use(options.auth.sso);
     app.use("/api/v1/auth", buildAuthRouter(options.auth.routes));
     app.use("/api/v1/me", buildMeRouter(options.auth.routes));
     app.use("/api/v1/admin/users", buildAdminUsersRouter(options.auth.routes));
