@@ -36,10 +36,17 @@ jobs:
           registry-url: https://npm.pkg.github.com
           scope: "@kisaesdevlab"
 
+      # Mirrors apps/*/Dockerfile: the git-hosted @kisaes/vibe-ai-client is
+      # prepared by a nested `pnpm install` in the SDK repo, whose root
+      # declares engines.node >=24 for its own dev environment while the SDK
+      # itself supports >=20. .npmrc's engine-strict=true would abort that
+      # prepare on the Node 20 runner, so relax it for the install only.
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SKIP_INSTALL_SIMPLE_GIT_HOOKS: "1"
+          npm_config_engine_strict: "false"
 
       # Build first so composite-project references resolve. Several
       # workspace tsconfigs reference others' `dist/` (e.g. pdf →
