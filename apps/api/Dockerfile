@@ -83,12 +83,19 @@ RUN node scripts/fix-esm-extensions.mjs
 FROM build AS prune
 # pnpm deploy assembles a self-contained directory containing only
 # the production dependencies and built output for the chosen package.
-# It re-resolves against the registry, so the private @kisaesdevlab/vibe-auth
-# tarball needs the same GitHub Packages token the fetch/build stages use
-# (401 otherwise, whenever the store mount is cold for this platform).
+#
+# It copies from the pnpm store, and the store is a cache MOUNT, not a
+# layer: when the fetch/build layers are restored from the registry/GHA
+# layer cache the mount is empty here. deploy then re-resolves from the
+# registry (401 on the private @kisaesdevlab/vibe-auth without the token)
+# and re-prepares the git-hosted SDK under --prod, where the nested
+# install skips devDependencies and `tsc` is missing. Warming the store
+# with the same dev-inclusive fetch first makes this stage self-sufficient;
+# on a warm store it is a no-op.
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     --mount=type=secret,id=NODE_AUTH_TOKEN,required=true \
     printf '//npm.pkg.github.com/:_authToken=%s\n' "$(cat /run/secrets/NODE_AUTH_TOKEN)" > /root/.npmrc \
+ && pnpm fetch --prod=false \
  && pnpm --filter @vibe-calc/api deploy --prod /deploy \
  && rm -f /root/.npmrc
 
