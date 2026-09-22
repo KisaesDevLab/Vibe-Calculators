@@ -5,11 +5,9 @@
 # Multi-stage:
 #   1. base    — node 20 + corepack-pinned pnpm; baseline image cache
 #   2. fetch   — pnpm fetch using the lockfile only (max layer cache reuse)
-#   3. build   — install workspace deps offline, run TS build for the API
-#                and its workspace deps
-#   4. prune   — produce a deploy/ directory holding only what apps/api
-#                actually needs at runtime
-#   5. runtime — distroless node 20; runs the compiled entry point
+#   3. build   — install workspace deps, TS build for the API and its
+#                workspace deps, then pnpm deploy into /deploy (one layer)
+#   4. runtime — distroless node 20; runs the compiled entry point
 #
 # OCI labels are populated by the release workflow (phase-01.14).
 
@@ -66,36 +64,30 @@ COPY package.json tsconfig.base.json tsconfig.json ./
 COPY apps/api ./apps/api
 COPY packages ./packages
 COPY scripts ./scripts
+# One layer, on purpose. install, build and `pnpm deploy` all lean on the
+# pnpm store, and the store is a cache MOUNT, not a layer: when an earlier
+# layer is restored from the registry/GHA layer cache, the mount arrives
+# empty. A deploy in its own layer then re-resolves from the registry
+# (401 on the private @kisaesdevlab/vibe-auth) and re-prepares the
+# git-hosted AI SDK under --prod, where the nested install skips
+# devDependencies and `tsc` is missing. Keeping the whole chain in one
+# RUN means either the layer is restored with /deploy already in it, or
+# install runs first and warms the store for deploy. Nothing is lost:
+# any source change already invalidated the install layer via the COPYs.
+#
 # --prefer-offline (not --offline): preparing the git-hosted SDK needs
 # network on a cold store; see the fetch stage for why scripts stay enabled.
+# fix-esm-extensions: tsconfig.base.json uses moduleResolution: Bundler,
+# which lets TS accept extensionless relative imports during typecheck;
+# native Node ESM in the distroless runtime doesn't.
+# pnpm deploy assembles /deploy with only the production dependencies and
+# built output for apps/api.
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     --mount=type=secret,id=NODE_AUTH_TOKEN,required=true \
     printf '//npm.pkg.github.com/:_authToken=%s\n' "$(cat /run/secrets/NODE_AUTH_TOKEN)" > /root/.npmrc \
  && pnpm install --frozen-lockfile --prefer-offline \
- && rm -f /root/.npmrc
-RUN pnpm --filter @vibe-calc/api... build
-# tsconfig.base.json uses moduleResolution: Bundler, which lets TS
-# accept extensionless relative imports during typecheck. Native Node
-# ESM in the distroless runtime doesn't — see scripts/fix-esm-extensions.mjs.
-RUN node scripts/fix-esm-extensions.mjs
-
-# ----------------------------------------------------------------------
-FROM build AS prune
-# pnpm deploy assembles a self-contained directory containing only
-# the production dependencies and built output for the chosen package.
-#
-# It copies from the pnpm store, and the store is a cache MOUNT, not a
-# layer: when the fetch/build layers are restored from the registry/GHA
-# layer cache the mount is empty here. deploy then re-resolves from the
-# registry (401 on the private @kisaesdevlab/vibe-auth without the token)
-# and re-prepares the git-hosted SDK under --prod, where the nested
-# install skips devDependencies and `tsc` is missing. Warming the store
-# with the same dev-inclusive fetch first makes this stage self-sufficient;
-# on a warm store it is a no-op.
-RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    --mount=type=secret,id=NODE_AUTH_TOKEN,required=true \
-    printf '//npm.pkg.github.com/:_authToken=%s\n' "$(cat /run/secrets/NODE_AUTH_TOKEN)" > /root/.npmrc \
- && pnpm fetch --prod=false \
+ && pnpm --filter @vibe-calc/api... build \
+ && node scripts/fix-esm-extensions.mjs \
  && pnpm --filter @vibe-calc/api deploy --prod /deploy \
  && rm -f /root/.npmrc
 
@@ -116,7 +108,7 @@ LABEL org.opencontainers.image.title="vibecalc-api" \
       org.opencontainers.image.revision="${GIT_SHA}"
 
 WORKDIR /app
-COPY --from=prune --chown=nonroot:nonroot /deploy /app
+COPY --from=build --chown=nonroot:nonroot /deploy /app
 
 EXPOSE 3000
 
