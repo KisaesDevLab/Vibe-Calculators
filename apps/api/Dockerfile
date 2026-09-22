@@ -83,8 +83,14 @@ RUN node scripts/fix-esm-extensions.mjs
 FROM build AS prune
 # pnpm deploy assembles a self-contained directory containing only
 # the production dependencies and built output for the chosen package.
+# It re-resolves against the registry, so the private @kisaesdevlab/vibe-auth
+# tarball needs the same GitHub Packages token the fetch/build stages use
+# (401 otherwise, whenever the store mount is cold for this platform).
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm --filter @vibe-calc/api deploy --prod /deploy
+    --mount=type=secret,id=NODE_AUTH_TOKEN,required=true \
+    printf '//npm.pkg.github.com/:_authToken=%s\n' "$(cat /run/secrets/NODE_AUTH_TOKEN)" > /root/.npmrc \
+ && pnpm --filter @vibe-calc/api deploy --prod /deploy \
+ && rm -f /root/.npmrc
 
 # ----------------------------------------------------------------------
 FROM gcr.io/distroless/nodejs20-debian12:nonroot AS runtime
