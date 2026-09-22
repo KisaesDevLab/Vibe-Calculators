@@ -15,6 +15,8 @@ interface AuthState {
   user: AuthUser | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  /** The current session was minted by single sign-on (sign-out goes through /auth). */
+  isSsoSession: boolean;
   hasPermission: (perm: Permission) => boolean;
   refetch: () => void;
 }
@@ -30,17 +32,19 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
   });
 
   const user = query.data?.user ?? null;
+  const isSsoSession = query.data?.session?.sso === true;
   const value = useMemo<AuthState>(
     () => ({
       user,
       isLoading: query.isLoading,
       isAuthenticated: user !== null,
+      isSsoSession,
       hasPermission: (perm) => user?.permissions.includes(perm) ?? false,
       refetch: () => {
         void query.refetch();
       },
     }),
-    [user, query.isLoading, query.refetch],
+    [user, isSsoSession, query.isLoading, query.refetch],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

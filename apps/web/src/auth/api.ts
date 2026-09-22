@@ -20,7 +20,8 @@ export interface AuthUser {
 
 export interface AuthMeResponse {
   user: AuthUser;
-  session: { expiresAt: string; absoluteExpiresAt: string } | null;
+  /** `sso` is present on GET /me only: true when the session came from single sign-on. */
+  session: { expiresAt: string; absoluteExpiresAt: string; sso?: boolean } | null;
 }
 
 async function call<T>(input: RequestInfo, init?: RequestInit): Promise<T> {

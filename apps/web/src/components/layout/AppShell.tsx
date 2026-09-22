@@ -23,6 +23,7 @@ import { useUiStore } from "@/store/ui";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { authApi } from "@/auth/api";
+import { BASE_PATH } from "@/lib/base-path";
 
 /**
  * Phase 4.1 — application shell.
@@ -62,6 +63,12 @@ const NAV_ITEMS: NavItem[] = [
   },
   { to: "/admin/ai", label: "AI provider", icon: Settings, permission: "ai:configure" },
   { to: "/admin/email", label: "Email", icon: Settings, permission: "settings:write" },
+  {
+    to: "/admin/authentication",
+    label: "Authentication",
+    icon: Settings,
+    permission: "settings:write",
+  },
   { to: "/admin/ai-prompts", label: "AI prompts", icon: Settings, permission: "ai:configure" },
   { to: "/admin/backups", label: "Backups", icon: Settings, permission: "backup:create" },
   { to: "/admin/tax-tables", label: "Tax tables", icon: Settings, permission: "settings:read" },
@@ -223,6 +230,7 @@ function UserMenu({ name }: { name: string }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { isSsoSession } = useAuth();
 
   useEffect(() => {
     if (!open) return;
@@ -242,6 +250,14 @@ function UserMenu({ name }: { name: string }): JSX.Element {
 
   async function signOut(): Promise<void> {
     setOpen(false);
+    if (isSsoSession) {
+      // A full navigation: the API ends the session, audits it and sends
+      // the browser back to the login page. `local=1` ends this app's
+      // session only — the firm's other Vibe apps stay signed in.
+      queryClient.clear();
+      window.location.assign(`${BASE_PATH}/auth/oidc/logout?local=1`);
+      return;
+    }
     try {
       await authApi.logout();
     } catch {

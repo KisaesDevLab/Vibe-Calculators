@@ -84,6 +84,7 @@ just test        # run every workspace's tests
 
 - **Email** — configure under **Admin → Email** in the UI (DB-backed, KMS-sealed secrets, test-send button). The matching `.env` block (`VIBE_EMAIL_PROVIDER` + `SMTP_*` / `POSTMARK_*` / `EMAILIT_*`) is honored as a fallback when the DB row is empty.
 - **AI extraction** — set `ANTHROPIC_API_KEY` to enable. Without it, AI features return 503; the rest of the app works fine.
+- **Single sign-on** — optional, through the firm's identity provider (Vibe Auth / any OpenID Connect provider); configure under **Admin → Authentication** or the `VIBE_AUTH_MODE` / `VIBE_OIDC_*` block. Local sign-in, magic links and API keys keep working. Operator notes, break-glass account and build token: [`docs/sso.md`](docs/sso.md).
 - **IRS AFR feed** — set `VIBE_AFR_FEED_URL` to your preferred mirror; the IRS does not publish a JSON feed natively. The fetcher is idempotent on re-run.
 
 ## Correctness benchmarks

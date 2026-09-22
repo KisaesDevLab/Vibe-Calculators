@@ -28,10 +28,23 @@ export const sessions = pgTable(
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     ip: text("ip"),
     userAgent: text("user_agent"),
+    /**
+     * Single sign-on (migration 0022). Set only on sessions minted by
+     * the OIDC callback; NULL for password / magic-link / break-glass
+     * sessions. `oidc_sid` is the IdP's session id (back-channel logout
+     * targets it); `oidc_id_token` is the KMS-sealed ID token kept for
+     * the RP-initiated logout hint.
+     */
+    oidcIssuer: text("oidc_issuer"),
+    oidcSubject: text("oidc_subject"),
+    oidcSid: text("oidc_sid"),
+    oidcIdToken: text("oidc_id_token"),
   },
   (t) => ({
     userIdx: index("sessions_user_idx").on(t.userId),
     expiresIdx: index("sessions_expires_idx").on(t.expiresAt),
+    oidcSidIdx: index("sessions_oidc_sid_idx").on(t.oidcSid),
+    oidcIdentityIdx: index("sessions_oidc_identity_idx").on(t.oidcIssuer, t.oidcSubject),
   }),
 );
 
